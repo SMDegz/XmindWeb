@@ -345,31 +345,41 @@ function findTopicByText(text) {
 }
 
 // ==================== Node Click Popup ====================
+let _nodeClickBound = false;
 function setupNodeClick() {
+    if (_nodeClickBound) return;
+    _nodeClickBound = true;
+
     const svg = document.getElementById('markmap');
     const popup = document.getElementById('node-popup');
 
     svg.addEventListener('click', (e) => {
         if (!currentFileId) return;
-        if (e.target.closest('.node-popup')) return;
+        if (e.target.closest('.node-popup') || e.target.closest('.comment-bubble-svg')) return;
 
         const fo = e.target.closest('foreignObject');
         if (!fo) { popup.style.display = 'none'; return; }
 
-        const text = fo.textContent?.trim();
-        if (!text) { popup.style.display = 'none'; return; }
-
-        const topic = findTopicByText(text);
-        if (!topic) { popup.style.display = 'none'; return; }
-
-        popupTopicId = topic.id;
-        popupPath = topic.path;
+        // Prefer data-topic-id (set by annotateSvgNodes), fallback to text
+        const tid = fo.getAttribute('data-topic-id');
+        if (tid) {
+            const topic = topicsCache.find(t => t.id == tid);
+            if (!topic) { popup.style.display = 'none'; return; }
+            popupTopicId = topic.id;
+            popupPath = topic.path;
+        } else {
+            const text = fo.textContent?.trim();
+            if (!text) { popup.style.display = 'none'; return; }
+            const topic = findTopicByText(text);
+            if (!topic) { popup.style.display = 'none'; return; }
+            popupTopicId = topic.id;
+            popupPath = topic.path;
+        }
 
         const containerRect = document.getElementById('mindmap-container').getBoundingClientRect();
         const foRect = fo.getBoundingClientRect();
         let left = foRect.right - containerRect.left + 4;
         let top = foRect.top - containerRect.top - 10;
-        // Keep popup in viewport
         if (left + 200 > containerRect.width) left = foRect.left - containerRect.left - 200;
         if (top < 40) top = foRect.bottom - containerRect.top + 4;
 
@@ -411,6 +421,7 @@ async function loadComments(fileId) {
             commentsCache[c.topic_id].push(c);
         }
         if (commentsVisible) renderCommentsPanel();
+        renderCommentBubbles();
     } catch(e) {}
 }
 
@@ -533,17 +544,109 @@ function highlightTopicComments(topicId) {
     }, 350);
 }
 
+function renderCommentBubbles() {
+    document.querySelectorAll('.comment-bubble-svg').forEach(el => el.remove());
+
+    if (!markmapInstance || !topicsCache.length) return;
+
+    const svgEl = document.querySelector('#markmap');
+    if (!svgEl) return;
+
+    // Annotate each foreignObject with topic ID
+    // Match by title text, using order to handle duplicates
+    const fos = svgEl.querySelectorAll('foreignObject');
+    const usedIds = new Set();
+    for (const fo of fos) {
+        const text = fo.textContent?.trim();
+        if (!text) continue;
+        const topic = topicsCache.find(t => t.title === text && !usedIds.has(t.id));
+        if (topic) {
+            fo.setAttribute('data-topic-id', topic.id);
+            usedIds.add(topic.id);
+        }
+    }
+
+    if (!Object.keys(commentsCache).length) return;
+
+    // Render bubbles using data-topic-id
+    const ns = 'http://www.w3.org/2000/svg';
+    for (const fo of fos) {
+        const tid = fo.getAttribute('data-topic-id');
+        if (!tid || !commentsCache[tid]) continue;
+
+        const count = commentsCache[tid].length;
+        const w = parseFloat(fo.getAttribute('width')) || 60;
+        const h = parseFloat(fo.getAttribute('height')) || 22;
+
+        const cx = w + 28;
+        const cy = h / 2 - 5;
+
+        const item = document.createElementNS(ns, 'g');
+        item.classList.add('comment-bubble-svg');
+        item.style.cursor = 'pointer';
+
+        const circle = document.createElementNS(ns, 'circle');
+        circle.setAttribute('cx', cx);
+        circle.setAttribute('cy', cy);
+        circle.setAttribute('r', 9);
+        circle.setAttribute('fill', '#6c5ce7');
+
+        const txt = document.createElementNS(ns, 'text');
+        txt.setAttribute('x', cx);
+        txt.setAttribute('y', cy);
+        txt.setAttribute('text-anchor', 'middle');
+        txt.setAttribute('dominant-baseline', 'central');
+        txt.setAttribute('fill', '#fff');
+        txt.setAttribute('font-size', '10');
+        txt.setAttribute('font-weight', '700');
+        txt.setAttribute('font-family', 'Arial, sans-serif');
+        txt.setAttribute('pointer-events', 'none');
+        txt.textContent = count;
+
+        item.appendChild(circle);
+        item.appendChild(txt);
+        item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openCommentsPanelForTopic(parseInt(tid));
+        });
+
+        fo.parentNode.appendChild(item);
+    }
+}
+
+function openCommentsPanelForTopic(topicId) {
+    if (!commentsVisible) {
+        commentsVisible = true;
+        updateCommentsBtn();
+    }
+    renderCommentsPanel();
+    document.getElementById('comments-panel').classList.add('open');
+    highlightTopicComments(topicId);
+}
+
 function locateNode(topicId) {
     if (!markmapInstance) return;
     const title = getTopicTitleById(topicId);
     if (!title || title === '(未知节点)') { showToast('找不到对应节点'); return; }
 
-    // Find the target node in markmap tree and unfold ancestors
+    // Find the target node in markmap tree by topicId path
+    // Build path from topicsCache and walk markmap tree to find the right node
+    const topic = topicsCache.find(t => t.id == topicId);
+    if (!topic) { showToast('找不到对应节点'); return; }
+    const pathParts = topic.path.split('/');
+
     let targetNode = null;
-    walkTree(markmapInstance.state.data, (n) => {
-        if (n.content === title || n.content?.replace(/<[^>]*>/g, '').trim() === title) {
-            targetNode = n;
+    const findByPath = (node, depth) => {
+        const content = node.content?.replace(/<[^>]*>/g, '').trim();
+        if (content === pathParts[depth]) {
+            if (depth === pathParts.length - 1) { targetNode = node; return true; }
+            if (node.children) for (const c of node.children) { if (findByPath(c, depth + 1)) return true; }
         }
+        return false;
+    };
+    walkTree(markmapInstance.state.data, (n) => {
+        const content = n.content?.replace(/<[^>]*>/g, '').trim();
+        if (content === pathParts[0]) { findByPath(n, 0); }
     });
 
     let needRefresh = false;
@@ -571,7 +674,13 @@ function locateNode(topicId) {
         const fos = svg.querySelectorAll('foreignObject');
         let targetFo = null;
         for (const fo of fos) {
-            if (fo.textContent?.trim() === title) { targetFo = fo; break; }
+            if (fo.getAttribute('data-topic-id') == topicId) { targetFo = fo; break; }
+        }
+        // Fallback to text match if annotation missing
+        if (!targetFo) {
+            for (const fo of fos) {
+                if (fo.textContent?.trim() === title) { targetFo = fo; break; }
+            }
         }
         if (!targetFo) { showToast('节点未找到或已折叠'); return; }
 
@@ -634,6 +743,7 @@ function renderMarkmap(markdown) {
 
     setTimeout(() => markmapInstance?.fit(), 400);
     setTimeout(() => { setupNodeClick(); }, 1000);
+    setTimeout(() => renderCommentBubbles(), 1200);
 }
 
 function fitMap() { markmapInstance?.fit(); }
