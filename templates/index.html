@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XMind 思维导图查看器</title>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-lib"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f0f2f5; color: #333; height: 100vh; display: flex; flex-direction: column; }
+
+        /* Header */
+        .header { background: #fff; border-bottom: 1px solid #e0e0e0; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+        .header h1 { font-size: 18px; font-weight: 600; color: #1a1a1a; }
+        .header-actions { display: flex; gap: 10px; align-items: center; }
+
+        /* Buttons */
+        .btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+        .btn-primary { background: #4a90d9; color: #fff; }
+        .btn-primary:hover { background: #357abd; }
+        .btn-danger { background: #e74c3c; color: #fff; }
+        .btn-danger:hover { background: #c0392b; }
+        .btn-outline { background: #fff; color: #666; border: 1px solid #d0d0d0; }
+        .btn-outline:hover { border-color: #4a90d9; color: #4a90d9; }
+        .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+        /* Layout */
+        .main { flex: 1; display: flex; overflow: hidden; }
+
+        /* Sidebar */
+        .sidebar { width: 280px; background: #fff; border-right: 1px solid #e0e0e0; display: flex; flex-direction: column; flex-shrink: 0; }
+        .sidebar-header { padding: 14px 16px; border-bottom: 1px solid #eee; font-size: 14px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+        .file-list { flex: 1; overflow-y: auto; padding: 8px; }
+        .file-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; transition: all 0.15s; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
+        .file-item:hover { background: #f5f7fa; }
+        .file-item.active { background: #e8f0fe; border: 1px solid #4a90d9; }
+        .file-info { flex: 1; min-width: 0; }
+        .file-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .file-meta { font-size: 11px; color: #999; margin-top: 3px; }
+        .file-delete { opacity: 0; transition: opacity 0.15s; }
+        .file-item:hover .file-delete { opacity: 1; }
+
+        /* Content */
+        .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+        /* Upload area */
+        .upload-area { margin: 16px; padding: 40px; border: 2px dashed #ccc; border-radius: 12px; text-align: center; cursor: pointer; transition: all 0.2s; background: #fafbfc; }
+        .upload-area:hover { border-color: #4a90d9; background: #f0f5ff; }
+        .upload-area.drag-over { border-color: #4a90d9; background: #e8f0fe; }
+        .upload-icon { font-size: 36px; margin-bottom: 10px; }
+        .upload-text { font-size: 14px; color: #666; }
+        .upload-hint { font-size: 12px; color: #aaa; margin-top: 6px; }
+
+        /* Mindmap container */
+        .mindmap-container { flex: 1; position: relative; display: none; }
+        .mindmap-container svg { width: 100%; height: 100%; }
+        .mindmap-toolbar { position: absolute; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px; }
+        .mindmap-toolbar .btn { background: rgba(255,255,255,0.9); box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+
+        /* Module panel */
+        .module-panel { width: 320px; background: #fff; border-left: 1px solid #e0e0e0; display: none; flex-direction: column; flex-shrink: 0; }
+        .module-panel.show { display: flex; }
+        .module-header { padding: 14px 16px; border-bottom: 1px solid #eee; font-size: 14px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+        .module-tree { flex: 1; overflow-y: auto; padding: 8px; }
+        .module-node { padding: 6px 8px; font-size: 12px; cursor: pointer; border-radius: 4px; transition: background 0.1s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .module-node:hover { background: #f0f5ff; }
+        .module-node.leaf { color: #4a90d9; }
+
+        /* Case detail */
+        .case-detail { position: fixed; top: 0; right: -420px; width: 400px; height: 100vh; background: #fff; box-shadow: -2px 0 12px rgba(0,0,0,0.1); z-index: 100; transition: right 0.3s; display: flex; flex-direction: column; }
+        .case-detail.open { right: 0; }
+        .case-detail-header { padding: 16px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .case-detail-header h3 { font-size: 15px; }
+        .case-detail-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+        .case-item { padding: 8px 12px; margin-bottom: 4px; border-radius: 6px; background: #f8f9fa; font-size: 13px; line-height: 1.5; }
+        .case-item .case-depth-1 { font-weight: 600; color: #1a1a1a; background: #e8f0fe; padding: 10px 12px; }
+        .case-item .case-depth-2 { color: #444; padding-left: 16px; border-left: 2px solid #4a90d9; margin: 4px 0; }
+        .case-item .case-depth-3 { color: #666; padding-left: 32px; }
+
+        /* Toast */
+        .toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; color: #fff; font-size: 13px; z-index: 999; opacity: 0; transform: translateY(-10px); transition: all 0.3s; }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.success { background: #27ae60; }
+        .toast.error { background: #e74c3c; }
+
+        /* Node popup menu */
+        .node-popup { position: absolute; z-index: 30; background: #fff; border: 1px solid #d0d0d0; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 4px 0; min-width: 180px; display: none; }
+        .node-popup button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 14px; border: none; background: none; cursor: pointer; font-size: 13px; color: #333; text-align: left; }
+        .node-popup button:hover { background: #f0f5ff; }
+        .node-popup hr { border: none; border-top: 1px solid #eee; margin: 2px 0; }
+        .node-popup .popup-comment { color: #27ae60; }
+
+        /* Comments panel (right slide) */
+        .comments-panel { position: fixed; top: 0; right: -420px; width: 400px; height: 100vh; background: #fff; box-shadow: -2px 0 12px rgba(0,0,0,0.1); z-index: 100; transition: right 0.3s; display: flex; flex-direction: column; }
+        .comments-panel.open { right: 0; }
+        .comments-panel-header { padding: 16px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .comments-panel-header h3 { font-size: 15px; }
+        .comments-panel-body { flex: 1; overflow-y: auto; padding: 12px 16px; }
+        .comment-group { margin-bottom: 16px; }
+        .comment-group-title { font-size: 12px; font-weight: 600; color: #4a90d9; padding: 6px 10px; background: #f0f5ff; border-radius: 6px; margin-bottom: 6px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .comment-group-title:hover { background: #e0ecff; }
+        .comment-entry { padding: 8px 12px; margin-bottom: 4px; border-radius: 6px; background: #f8f9fa; font-size: 13px; line-height: 1.5; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+        .comment-entry.highlight { background: #fff3cd; border: 1px solid #ffc107; }
+        .comment-entry-content { flex: 1; }
+        .comment-entry-author { font-weight: 600; color: #27ae60; font-size: 12px; }
+        .comment-entry-text { margin-top: 2px; word-break: break-word; }
+        .comment-entry-time { font-size: 11px; color: #aaa; margin-top: 2px; }
+        .comment-entry .btn-delete-comment { opacity: 0; background: none; border: none; cursor: pointer; color: #e74c3c; font-size: 12px; padding: 2px 4px; flex-shrink: 0; }
+        .comment-entry:hover .btn-delete-comment { opacity: 1; }
+        .comments-empty { text-align: center; color: #bbb; padding: 40px 20px; font-size: 13px; }
+
+        /* Comments toggle button active state */
+        #btn-comments.active { background: #e8f0fe; border-color: #4a90d9; color: #4a90d9; }
+
+        /* Empty state */
+        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; color: #bbb; }
+        .empty-state-icon { font-size: 48px; margin-bottom: 12px; }
+        .empty-state-text { font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>XMind 思维导图查看器</h1>
+    <div class="header-actions">
+        <label class="btn btn-primary" for="file-input">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            上传 XMind
+        </label>
+        <input type="file" id="file-input" accept=".xmind" style="display:none" onchange="handleUpload(this.files[0])">
+        <button class="btn btn-outline" onclick="toggleModulePanel()" id="btn-module">模块用例</button>
+    </div>
+</div>
+
+<div class="main">
+    <!-- Sidebar: file list -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <span>文件列表</span>
+            <span id="file-count" style="font-size:12px;color:#999;font-weight:400"></span>
+        </div>
+        <div class="file-list" id="file-list"></div>
+    </div>
+
+    <!-- Main content -->
+    <div class="content" id="content-area">
+        <div class="upload-area" id="upload-area"
+             ondragover="event.preventDefault(); this.classList.add('drag-over')"
+             ondragleave="this.classList.remove('drag-over')"
+             ondrop="event.preventDefault(); this.classList.remove('drag-over'); handleUpload(event.dataTransfer.files[0])"
+             onclick="document.getElementById('file-input').click()">
+            <div class="upload-icon">📁</div>
+            <div class="upload-text">拖拽 XMind 文件到此处，或点击上传</div>
+            <div class="upload-hint">支持 .xmind 格式</div>
+        </div>
+
+        <div class="mindmap-container" id="mindmap-container">
+            <div class="mindmap-toolbar">
+                <button class="btn btn-sm" onclick="fitMap()" title="适应窗口">适应</button>
+                <button class="btn btn-sm" onclick="expandAll()" title="全部展开">展开</button>
+                <button class="btn btn-sm" onclick="collapseAll()" title="折叠到二级">折叠</button>
+                <button class="btn btn-sm" onclick="toggleComments()" id="btn-comments" title="显示/隐藏评论">评论</button>
+            </div>
+            <svg id="markmap" style="width:100%;height:100%"></svg>
+            <!-- Click popup menu -->
+            <div class="node-popup" id="node-popup">
+                <button onclick="popupAction('md')">🔗 复制链接 (.md)</button>
+                <button onclick="popupAction('prompt')">🤖 复制链接 (.prompt)</button>
+                <hr>
+                <button class="popup-comment" onclick="popupAction('comment')">💬 添加评论</button>
+            </div>
+        </div>
+
+        <div class="empty-state" id="empty-state" style="display:none">
+            <div class="empty-state-icon">🗺️</div>
+            <div class="empty-state-text">选择左侧文件查看思维导图</div>
+        </div>
+    </div>
+
+    <!-- Module panel -->
+    <div class="module-panel" id="module-panel">
+        <div class="module-header">
+            <span>模块用例</span>
+            <span id="module-file-name" style="font-size:11px;color:#999;font-weight:400"></span>
+        </div>
+        <div class="module-tree" id="module-tree"></div>
+    </div>
+</div>
+
+<!-- Case detail slide panel -->
+<div class="case-detail" id="case-detail">
+    <div class="case-detail-header">
+        <h3 id="case-title">用例详情</h3>
+        <button class="btn btn-sm btn-outline" onclick="closeCaseDetail()">关闭</button>
+    </div>
+    <div class="case-detail-body" id="case-body"></div>
+</div>
+
+<!-- Comments slide panel -->
+<div class="comments-panel" id="comments-panel">
+    <div class="comments-panel-header">
+        <h3>评论 (<span id="comments-count">0</span>)</h3>
+        <button class="btn btn-sm btn-outline" onclick="closeCommentsPanel()">关闭</button>
+    </div>
+    <div class="comments-panel-body" id="comments-panel-body"></div>
+</div>
+
+<script>
+let currentFileId = null;
+let markmapInstance = null;
+let filesCache = [];
+let serverInfo = { ip: '127.0.0.1', port: 8000 };
+let topicsCache = [];
+let commentsCache = {};   // topic_id -> [comment]
+let commentsVisible = false;
+let popupTopicId = null;
+let popupPath = null;
+
+// ==================== Init ====================
+document.addEventListener('DOMContentLoaded', async () => {
+    try { const res = await fetch('/api/server-info'); serverInfo = await res.json(); } catch(e) {}
+    loadFiles();
+});
+
+// ==================== Toast ====================
+function showToast(msg, type = 'success') {
+    const t = document.createElement('div');
+    t.className = `toast ${type}`;
+    t.textContent = msg;
+    document.body.appendChild(t);
+    requestAnimationFrame(() => t.classList.add('show'));
+    setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 2500);
+}
+
+// ==================== Clipboard & URL ====================
+function buildExportUrl(fileId, path, format = 'md') {
+    return `http://${serverInfo.ip}:${serverInfo.port}/api/export/${fileId}/${encodeURIComponent(path)}?format=${format}`;
+}
+
+async function copyToClipboard(text) {
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch {
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+        document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+        return true;
+    }
+}
+
+// ==================== Author ====================
+function getAuthorName() {
+    let name = localStorage.getItem('xmind_author');
+    if (!name) {
+        name = prompt('请输入您的名字（用于评论署名）:', '') || '';
+        if (name.trim()) { localStorage.setItem('xmind_author', name.trim()); name = name.trim(); }
+        else name = '匿名';
+    }
+    return name;
+}
+
+// ==================== File Operations ====================
+async function loadFiles() {
+    const res = await fetch('/api/files');
+    filesCache = await res.json();
+    renderFileList();
+}
+
+function renderFileList() {
+    const el = document.getElementById('file-list');
+    const count = document.getElementById('file-count');
+    count.textContent = filesCache.length ? `(${filesCache.length})` : '';
+    if (!filesCache.length) { el.innerHTML = '<div style="padding:20px;text-align:center;color:#bbb;font-size:13px">暂无文件</div>'; return; }
+    el.innerHTML = filesCache.map(f => `
+        <div class="file-item ${f.id === currentFileId ? 'active' : ''}" onclick="selectFile(${f.id})">
+            <div class="file-info">
+                <div class="file-name" title="${f.filename}">📄 ${f.root_title}</div>
+                <div class="file-meta">${f.filename} · ${f.upload_time}</div>
+            </div>
+            <button class="btn btn-sm btn-danger file-delete" onclick="event.stopPropagation(); deleteFile(${f.id}, '${f.filename}')">删除</button>
+        </div>
+    `).join('');
+}
+
+async function handleUpload(file) {
+    if (!file) return;
+    if (!file.name.endsWith('.xmind')) { showToast('请上传 .xmind 文件', 'error'); return; }
+    const form = new FormData(); form.append('file', file);
+    try {
+        const res = await fetch('/api/upload', { method: 'POST', body: form });
+        if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+        const data = await res.json();
+        showToast(`上传成功: ${data.root_title} (${data.topic_count} 个节点)`);
+        await loadFiles(); selectFile(data.id);
+    } catch (e) { showToast(e.message, 'error'); }
+    document.getElementById('file-input').value = '';
+}
+
+async function deleteFile(id, name) {
+    if (!confirm(`确定删除 "${name}"？`)) return;
+    await fetch(`/api/files/${id}`, { method: 'DELETE' });
+    if (currentFileId === id) { currentFileId = null; resetView(); }
+    showToast('已删除'); await loadFiles();
+}
+
+// ==================== File Selection ====================
+async function selectFile(id) {
+    currentFileId = id;
+    renderFileList();
+    document.getElementById('upload-area').style.display = 'none';
+    document.getElementById('empty-state').style.display = 'none';
+    document.getElementById('mindmap-container').style.display = 'block';
+
+    const detailRes = await fetch(`/api/files/${id}`);
+    const detail = await detailRes.json();
+    topicsCache = detail.topics || [];
+
+    const res = await fetch(`/api/files/${id}/mindmap`);
+    const data = await res.json();
+    renderMarkmap(data.markdown);
+    loadModules(id);
+
+    // Load comments
+    commentsCache = {};
+    commentsVisible = false;
+    updateCommentsBtn();
+    document.getElementById('comments-panel').classList.remove('open');
+    await loadComments(id);
+}
+
+function resetView() {
+    document.getElementById('mindmap-container').style.display = 'none';
+    document.getElementById('empty-state').style.display = 'none';
+    document.getElementById('upload-area').style.display = '';
+    document.getElementById('module-panel').classList.remove('show');
+}
+
+// ==================== Node Path Lookup ====================
+function findTopicByText(text) {
+    if (!topicsCache.length || !text) return null;
+    const matches = topicsCache.filter(t => t.title === text);
+    if (matches.length === 1) return matches[0];
+    return matches.length > 0 ? matches[0] : null;
+}
+
+// ==================== Node Click Popup ====================
+function setupNodeClick() {
+    const svg = document.getElementById('markmap');
+    const popup = document.getElementById('node-popup');
+
+    svg.addEventListener('click', (e) => {
+        if (!currentFileId) return;
+        if (e.target.closest('.node-popup')) return;
+
+        const fo = e.target.closest('foreignObject');
+        if (!fo) { popup.style.display = 'none'; return; }
+
+        const text = fo.textContent?.trim();
+        if (!text) { popup.style.display = 'none'; return; }
+
+        const topic = findTopicByText(text);
+        if (!topic) { popup.style.display = 'none'; return; }
+
+        popupTopicId = topic.id;
+        popupPath = topic.path;
+
+        const containerRect = document.getElementById('mindmap-container').getBoundingClientRect();
+        const foRect = fo.getBoundingClientRect();
+        let left = foRect.right - containerRect.left + 4;
+        let top = foRect.top - containerRect.top - 10;
+        // Keep popup in viewport
+        if (left + 200 > containerRect.width) left = foRect.left - containerRect.left - 200;
+        if (top < 40) top = foRect.bottom - containerRect.top + 4;
+
+        popup.style.display = 'block';
+        popup.style.left = left + 'px';
+        popup.style.top = top + 'px';
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.node-popup') && !e.target.closest('foreignObject')) {
+            popup.style.display = 'none';
+        }
+    });
+}
+
+async function popupAction(action) {
+    document.getElementById('node-popup').style.display = 'none';
+    if (!popupPath || !currentFileId) return;
+
+    if (action === 'md') {
+        await copyToClipboard(buildExportUrl(currentFileId, popupPath));
+        showToast('已复制 MD 链接');
+    } else if (action === 'prompt') {
+        await copyToClipboard(buildExportUrl(currentFileId, popupPath, 'prompt'));
+        showToast('已复制 Prompt 链接');
+    } else if (action === 'comment') {
+        openCommentDialog();
+    }
+}
+
+// ==================== Comments ====================
+async function loadComments(fileId) {
+    try {
+        const res = await fetch(`/api/comments/${fileId}`);
+        const comments = await res.json();
+        commentsCache = {};
+        for (const c of comments) {
+            if (!commentsCache[c.topic_id]) commentsCache[c.topic_id] = [];
+            commentsCache[c.topic_id].push(c);
+        }
+        if (commentsVisible) renderCommentsPanel();
+    } catch(e) {}
+}
+
+async function openCommentDialog() {
+    if (!popupTopicId) return;
+    const author = getAuthorName();
+    const content = prompt(`${author} 评论:`);
+    if (!content || !content.trim()) return;
+
+    await fetch(`/api/comments/${currentFileId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic_id: popupTopicId, author, content: content.trim() }),
+    });
+    showToast('评论已添加');
+    await loadComments(currentFileId);
+    if (!commentsVisible) { commentsVisible = true; updateCommentsBtn(); }
+    renderCommentsPanel();
+    document.getElementById('comments-panel').classList.add('open');
+    highlightTopicComments(popupTopicId);
+}
+
+function toggleComments() {
+    commentsVisible = !commentsVisible;
+    updateCommentsBtn();
+    const panel = document.getElementById('comments-panel');
+    if (commentsVisible) {
+        renderCommentsPanel();
+        panel.classList.add('open');
+    } else {
+        panel.classList.remove('open');
+    }
+}
+
+function closeCommentsPanel() {
+    commentsVisible = false;
+    updateCommentsBtn();
+    document.getElementById('comments-panel').classList.remove('open');
+}
+
+function updateCommentsBtn() {
+    const btn = document.getElementById('btn-comments');
+    if (btn) btn.classList.toggle('active', commentsVisible);
+}
+
+function escapeHtml(text) {
+    const d = document.createElement('div');
+    d.textContent = text;
+    return d.innerHTML;
+}
+
+function getTopicTitleById(topicId) {
+    const t = topicsCache.find(t => t.id === topicId);
+    return t ? t.title : '(未知节点)';
+}
+
+function renderCommentsPanel() {
+    const body = document.getElementById('comments-panel-body');
+    const countEl = document.getElementById('comments-count');
+
+    // Collect all comments
+    const allComments = [];
+    for (const [topicId, comments] of Object.entries(commentsCache)) {
+        for (const c of comments) {
+            allComments.push({ ...c, topicTitle: getTopicTitleById(parseInt(topicId)) });
+        }
+    }
+    countEl.textContent = allComments.length;
+
+    if (!allComments.length) {
+        body.innerHTML = '<div class="comments-empty">暂无评论<br><span style="font-size:12px">点击节点文字 → 添加评论</span></div>';
+        return;
+    }
+
+    // Group by topic
+    const grouped = {};
+    for (const c of allComments) {
+        if (!grouped[c.topic_id]) grouped[c.topic_id] = { title: c.topicTitle, comments: [] };
+        grouped[c.topic_id].comments.push(c);
+    }
+
+    let html = '';
+    for (const [topicId, group] of Object.entries(grouped)) {
+        html += `<div class="comment-group" data-topic-id="${topicId}">`;
+        html += `<div class="comment-group-title" title="${escapeHtml(group.title)}" onclick="locateNode(${topicId})">${escapeHtml(group.title)}</div>`;
+        for (const c of group.comments) {
+            html += `<div class="comment-entry" id="comment-${c.id}">
+                <div class="comment-entry-content">
+                    <div class="comment-entry-author">${escapeHtml(c.author)}</div>
+                    <div class="comment-entry-text">${escapeHtml(c.content)}</div>
+                    <div class="comment-entry-time">${c.created_at || ''}</div>
+                </div>
+                <button class="btn-delete-comment" onclick="deleteCommentConfirm(${c.id})" title="删除">✕</button>
+            </div>`;
+        }
+        html += '</div>';
+    }
+    body.innerHTML = html;
+}
+
+async function deleteCommentConfirm(commentId) {
+    if (!confirm('确定删除该评论？')) return;
+    await fetch(`/api/comments/${commentId}`, { method: 'DELETE' });
+    showToast('评论已删除');
+    await loadComments(currentFileId);
+    renderCommentsPanel();
+}
+
+function highlightTopicComments(topicId) {
+    setTimeout(() => {
+        // Scroll to and highlight the comment group
+        const group = document.querySelector(`.comment-group[data-topic-id="${topicId}"]`);
+        if (group) {
+            group.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            group.querySelectorAll('.comment-entry').forEach(el => {
+                el.classList.add('highlight');
+                setTimeout(() => el.classList.remove('highlight'), 2000);
+            });
+        }
+    }, 350);
+}
+
+function locateNode(topicId) {
+    if (!markmapInstance) return;
+    const title = getTopicTitleById(topicId);
+    if (!title || title === '(未知节点)') { showToast('找不到对应节点'); return; }
+
+    // Find the target node in markmap tree and unfold ancestors
+    let targetNode = null;
+    walkTree(markmapInstance.state.data, (n) => {
+        if (n.content === title || n.content?.replace(/<[^>]*>/g, '').trim() === title) {
+            targetNode = n;
+        }
+    });
+
+    let needRefresh = false;
+    if (targetNode) {
+        const findAncestors = (root, target) => {
+            const path = [];
+            const find = (n, trail) => {
+                trail.push(n);
+                if (n === target) { path.push(...trail); return true; }
+                if (n.children) for (const c of n.children) { if (find(c, [...trail])) return true; }
+                return false;
+            };
+            find(root, []);
+            return path;
+        };
+        for (const n of findAncestors(markmapInstance.state.data, targetNode)) {
+            if (n.payload?.fold) { n.payload.fold = 0; needRefresh = true; }
+        }
+        if (needRefresh) markmapInstance.setData(markmapInstance.state.data);
+    }
+
+    // Wait for render then locate in SVG
+    setTimeout(() => {
+        const svg = document.getElementById('markmap');
+        const fos = svg.querySelectorAll('foreignObject');
+        let targetFo = null;
+        for (const fo of fos) {
+            if (fo.textContent?.trim() === title) { targetFo = fo; break; }
+        }
+        if (!targetFo) { showToast('节点未找到或已折叠'); return; }
+
+        const svgEl = svg.querySelector('svg') || svg;
+        const g = svgEl.querySelector('g');
+        if (!g) return;
+
+        // Calculate offset to center the node in viewport
+        const foRect = targetFo.getBoundingClientRect();
+        const svgRect = svgEl.getBoundingClientRect();
+        const dx = svgRect.width / 2 - (foRect.left + foRect.width / 2 - svgRect.left);
+        const dy = svgRect.height / 2 - (foRect.top + foRect.height / 2 - svgRect.top);
+
+        const ct = g.getAttribute('transform') || '';
+        const tm = ct.match(/translate\(([-\d.]+),\s*([-\d.]+)\)/);
+        const sm = ct.match(/scale\(([-\d.]+)\)/);
+        const tx = tm ? parseFloat(tm[1]) : 0;
+        const ty = tm ? parseFloat(tm[2]) : 0;
+        const sc = sm ? parseFloat(sm[1]) : 1;
+
+        g.style.transition = 'transform 0.4s ease';
+        g.setAttribute('transform', `translate(${tx + dx},${ty + dy}) scale(${sc})`);
+        setTimeout(() => { g.style.transition = ''; }, 450);
+
+        // Highlight the node briefly
+        targetFo.style.transition = 'outline 0.2s';
+        targetFo.style.outline = '3px solid #4a90d9';
+        targetFo.style.outlineOffset = '4px';
+        targetFo.style.borderRadius = '6px';
+        setTimeout(() => {
+            targetFo.style.outline = '';
+            targetFo.style.outlineOffset = '';
+        }, 2500);
+    }, needRefresh ? 500 : 100);
+}
+
+// ==================== Markmap Rendering ====================
+function renderMarkmap(markdown) {
+    const container = document.getElementById('markmap');
+    container.innerHTML = '';
+    if (markmapInstance) { markmapInstance.destroy(); markmapInstance = null; }
+
+    const { Markmap, Transformer } = window.markmap;
+    const transformer = new Transformer();
+    const { root, features } = transformer.transform(markdown);
+    const { styles, scripts } = transformer.getUsedAssets(features);
+    if (styles) window.markmap.loadCSS(styles);
+    if (scripts) window.markmap.loadJS(scripts, { getMarkmap: () => window.markmap });
+
+    markmapInstance = Markmap.create("#markmap", {
+        autoFit: true,
+        color: (node) => {
+            const colors = ['#4a90d9', '#27ae60', '#e67e22', '#8e44ad', '#e74c3c', '#16a085'];
+            return colors[node.state?.depth % colors.length] || '#4a90d9';
+        },
+        duration: 300, embedGlobalCSS: true, fitRatio: 0.85,
+        maxWidth: 300, nodeMinHeight: 22, paddingX: 16,
+        spacingHorizontal: 80, spacingVertical: 8,
+    }, root);
+
+    setTimeout(() => markmapInstance?.fit(), 400);
+    setTimeout(() => { setupNodeClick(); }, 1000);
+}
+
+function fitMap() { markmapInstance?.fit(); }
+function walkTree(node, fn) { fn(node); if (node.children) node.children.forEach(c => walkTree(c, fn)); }
+function expandAll() {
+    if (!markmapInstance) return;
+    walkTree(markmapInstance.state.data, (n) => { n.payload = n.payload || {}; n.payload.fold = 0; });
+    markmapInstance.setData(markmapInstance.state.data);
+    setTimeout(() => markmapInstance.fit(), 300);
+}
+function collapseAll() {
+    if (!markmapInstance) return;
+    walkTree(markmapInstance.state.data, (n) => { n.payload = n.payload || {}; if (n.state?.depth >= 2) n.payload.fold = 1; });
+    markmapInstance.setData(markmapInstance.state.data);
+    setTimeout(() => markmapInstance.fit(), 300);
+}
+
+// ==================== Module Panel ====================
+function toggleModulePanel() {
+    const panel = document.getElementById('module-panel');
+    panel.classList.toggle('show');
+    if (panel.classList.contains('show') && currentFileId) loadModules(currentFileId);
+}
+
+async function loadModules(fileId) {
+    const treeRes = await fetch(`/api/files/${fileId}/tree`);
+    const tree = await treeRes.json();
+    const moduleTree = document.getElementById('module-tree');
+    const f = filesCache.find(x => x.id === fileId);
+    document.getElementById('module-file-name').textContent = f ? f.root_title : '';
+    moduleTree.innerHTML = '';
+    function renderNode(node, depth = 0) {
+        const div = document.createElement('div');
+        div.className = 'module-node' + (node.children.length === 0 ? ' leaf' : '');
+        div.style.paddingLeft = (12 + depth * 16) + 'px';
+        div.textContent = node.title; div.title = node.path;
+        div.onclick = () => loadCases(fileId, node.path, node.title);
+        moduleTree.appendChild(div);
+        for (const child of node.children) renderNode(child, depth + 1);
+    }
+    if (tree.length > 0) for (const child of (tree[0].children || [])) renderNode(child, 0);
+}
+
+async function loadCases(fileId, path, title) {
+    const res = await fetch(`/api/cases/${fileId}/${encodeURIComponent(path)}`);
+    if (!res.ok) { showToast('加载用例失败', 'error'); return; }
+    const data = await res.json();
+    document.getElementById('case-title').textContent = data.module;
+    const body = document.getElementById('case-body');
+    let toolbar = `<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
+        <button class="btn btn-sm btn-outline" onclick="copyExportUrl('${encodeURIComponent(path)}')">复制链接</button>
+        <button class="btn btn-sm btn-outline" onclick="copyPromptUrl('${encodeURIComponent(path)}')" style="color:#27ae60;border-color:#27ae60">复制为 Prompt</button>
+    </div>`;
+    if (!data.cases.length) {
+        body.innerHTML = toolbar + '<div style="color:#bbb;text-align:center;padding:20px">该模块下无子用例</div>';
+    } else {
+        body.innerHTML = toolbar + data.cases.map(c => {
+            return `<div class="case-item"><div class="case-depth-${Math.min(c.depth,3)}">${c.title}</div></div>`;
+        }).join('');
+    }
+    document.getElementById('case-detail').classList.add('open');
+}
+
+async function copyExportUrl(ep) { await copyToClipboard(buildExportUrl(currentFileId, decodeURIComponent(ep))); showToast('已复制分享链接'); }
+async function copyPromptUrl(ep) { await copyToClipboard(buildExportUrl(currentFileId, decodeURIComponent(ep), 'prompt')); showToast('已复制 Prompt 链接'); }
+function closeCaseDetail() { document.getElementById('case-detail').classList.remove('open'); }
+</script>
+</body>
+</html>
