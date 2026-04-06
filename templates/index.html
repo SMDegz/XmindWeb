@@ -42,6 +42,20 @@
         .file-delete { opacity: 0; transition: opacity 0.15s; }
         .file-item:hover .file-delete { opacity: 1; }
 
+        /* Modal */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 200; display: flex; align-items: center; justify-content: center; }
+        .modal { background: #fff; border-radius: 12px; padding: 24px; width: 420px; max-width: 90vw; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+        .modal h3 { margin: 0 0 16px; font-size: 16px; }
+        .modal label { display: block; font-size: 13px; color: #555; margin-bottom: 4px; margin-top: 10px; }
+        .modal input, .modal textarea, .modal select { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; box-sizing: border-box; }
+        .modal textarea { resize: vertical; min-height: 50px; }
+        .modal .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+        .modal .required::after { content: '*'; color: #e74c3c; }
+
+        /* Filter bar */
+        .filter-bar { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid #eee; }
+        .filter-bar input, .filter-bar select { flex: 1; padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; min-width: 0; }
+
         /* Content */
         .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
@@ -141,6 +155,10 @@
             <span>文件列表</span>
             <span id="file-count" style="font-size:12px;color:#999;font-weight:400"></span>
         </div>
+        <div class="filter-bar">
+            <input type="text" id="filter-search" placeholder="搜索标题/项目" oninput="renderFileList()">
+            <select id="filter-project" onchange="renderFileList()"><option value="">全部项目</option></select>
+        </div>
         <div class="file-list" id="file-list"></div>
     </div>
 
@@ -167,7 +185,7 @@
             <!-- Click popup menu -->
             <div class="node-popup" id="node-popup">
                 <button onclick="popupAction('md')">🔗 复制链接 (.md)</button>
-                <button onclick="popupAction('prompt')">🤖 复制链接 (.prompt)</button>
+                <button onclick="popupAction('prompt')">🤖 复制 Prompt</button>
                 <hr>
                 <button class="popup-comment" onclick="popupAction('comment')">💬 添加评论</button>
             </div>
@@ -205,6 +223,42 @@
         <button class="btn btn-sm btn-outline" onclick="closeCommentsPanel()">关闭</button>
     </div>
     <div class="comments-panel-body" id="comments-panel-body"></div>
+</div>
+
+<!-- Upload Modal -->
+<div class="modal-overlay" id="upload-modal" style="display:none" onclick="if(event.target===this)closeUploadModal()">
+    <div class="modal" onclick="event.stopPropagation()">
+        <h3>上传 XMind 文件</h3>
+        <input type="hidden" id="modal-file-data">
+        <label class="required">姓名</label>
+        <input type="text" id="modal-uploader" placeholder="请输入您的姓名" required>
+        <label class="required">密码</label>
+        <input type="password" id="modal-password" placeholder="删除时需要验证此密码" required>
+        <label>项目名称</label>
+        <input type="text" id="modal-project" placeholder="可选，如： XX管理系统">
+        <label>版本号</label>
+        <input type="text" id="modal-version" placeholder="可选，如: v1.0.0">
+        <label>备注</label>
+        <textarea id="modal-remark" placeholder="可选" rows="2"></textarea>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeUploadModal()">取消</button>
+            <button class="btn btn-primary" onclick="submitUpload()">确认上传</button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Modal -->
+<div class="modal-overlay" id="delete-modal" style="display:none" onclick="if(event.target===this)closeDeleteModal()">
+    <div class="modal" onclick="event.stopPropagation()">
+        <h3>确认删除</h3>
+        <p id="delete-file-name" style="font-size:13px;color:#666;margin:8px 0 16px"></p>
+        <label class="required">输入密码</label>
+        <input type="password" id="delete-password" placeholder="请输入上传时设置的密码">
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeDeleteModal()">取消</button>
+            <button class="btn btn-danger" onclick="confirmDelete()">确认删除</button>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -261,47 +315,124 @@ function getAuthorName() {
 }
 
 // ==================== File Operations ====================
+let pendingUploadFile = null;
+
 async function loadFiles() {
     const res = await fetch('/api/files');
     filesCache = await res.json();
+    updateProjectFilter();
     renderFileList();
+}
+
+function updateProjectFilter() {
+    const sel = document.getElementById('filter-project');
+    const current = sel.value;
+    const projects = [...new Set(filesCache.map(f => f.project).filter(Boolean))];
+    sel.innerHTML = '<option value="">全部项目</option>' +
+        projects.map(p => `<option value="${p}">${p}</option>`).join('');
+    if (projects.includes(current)) sel.value = current;
 }
 
 function renderFileList() {
     const el = document.getElementById('file-list');
     const count = document.getElementById('file-count');
-    count.textContent = filesCache.length ? `(${filesCache.length})` : '';
-    if (!filesCache.length) { el.innerHTML = '<div style="padding:20px;text-align:center;color:#bbb;font-size:13px">暂无文件</div>'; return; }
-    el.innerHTML = filesCache.map(f => `
+    const search = document.getElementById('filter-search').value.trim().toLowerCase();
+    const project = document.getElementById('filter-project').value;
+
+    let filtered = filesCache;
+    if (search) filtered = filtered.filter(f => (f.root_title + ' ' + f.project + ' ' + f.uploader).toLowerCase().includes(search));
+    if (project) filtered = filtered.filter(f => f.project === project);
+
+    count.textContent = filtered.length ? `(${filtered.length})` : '';
+    if (!filtered.length) { el.innerHTML = '<div style="padding:20px;text-align:center;color:#bbb;font-size:13px">暂无文件</div>'; return; }
+    el.innerHTML = filtered.map(f => {
+        const tags = [];
+        if (f.project) tags.push(`<span style="background:#e8f0fe;color:#4a90d9;padding:1px 6px;border-radius:4px;font-size:11px">${f.project}</span>`);
+        if (f.version) tags.push(`<span style="background:#fef3e0;color:#e67e22;padding:1px 6px;border-radius:4px;font-size:11px">${f.version}</span>`);
+        return `
         <div class="file-item ${f.id === currentFileId ? 'active' : ''}" onclick="selectFile(${f.id})">
             <div class="file-info">
                 <div class="file-name" title="${f.filename}">📄 ${f.root_title}</div>
-                <div class="file-meta">${f.filename} · ${f.upload_time}</div>
+                <div class="file-meta">${f.uploader || '匿名'} · ${f.upload_time}${tags.length ? ' ' + tags.join(' ') : ''}</div>
             </div>
-            <button class="btn btn-sm btn-danger file-delete" onclick="event.stopPropagation(); deleteFile(${f.id}, '${f.filename}')">删除</button>
-        </div>
-    `).join('');
+            <button class="btn btn-sm btn-danger file-delete" onclick="event.stopPropagation(); showDeleteModal(${f.id}, '${(f.root_title || '').replace(/'/g, "\\'")}')">删除</button>
+        </div>`;
+    }).join('');
 }
 
-async function handleUpload(file) {
+function handleUpload(file) {
     if (!file) return;
     if (!file.name.endsWith('.xmind')) { showToast('请上传 .xmind 文件', 'error'); return; }
-    const form = new FormData(); form.append('file', file);
+    pendingUploadFile = file;
+    document.getElementById('modal-uploader').value = localStorage.getItem('xmind_author') || '';
+    document.getElementById('modal-password').value = '';
+    document.getElementById('modal-project').value = '';
+    document.getElementById('modal-version').value = '';
+    document.getElementById('modal-remark').value = '';
+    document.getElementById('upload-modal').style.display = 'flex';
+}
+
+function closeUploadModal() {
+    document.getElementById('upload-modal').style.display = 'none';
+    pendingUploadFile = null;
+    document.getElementById('file-input').value = '';
+}
+
+async function submitUpload() {
+    const uploader = document.getElementById('modal-uploader').value.trim();
+    const password = document.getElementById('modal-password').value;
+    const project = document.getElementById('modal-project').value.trim();
+    const version = document.getElementById('modal-version').value.trim();
+    const remark = document.getElementById('modal-remark').value.trim();
+
+    if (!uploader) { showToast('请输入姓名', 'error'); return; }
+    if (!password) { showToast('请输入密码', 'error'); return; }
+
+    const form = new FormData();
+    form.append('file', pendingUploadFile);
+    form.append('uploader', uploader);
+    form.append('password', password);
+    form.append('project', project);
+    form.append('version', version);
+    form.append('remark', remark);
+
     try {
         const res = await fetch('/api/upload', { method: 'POST', body: form });
         if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
         const data = await res.json();
+        localStorage.setItem('xmind_author', uploader);
         showToast(`上传成功: ${data.root_title} (${data.topic_count} 个节点)`);
+        closeUploadModal();
         await loadFiles(); selectFile(data.id);
     } catch (e) { showToast(e.message, 'error'); }
-    document.getElementById('file-input').value = '';
 }
 
-async function deleteFile(id, name) {
-    if (!confirm(`确定删除 "${name}"？`)) return;
-    await fetch(`/api/files/${id}`, { method: 'DELETE' });
-    if (currentFileId === id) { currentFileId = null; resetView(); }
-    showToast('已删除'); await loadFiles();
+let deleteFileId = null;
+function showDeleteModal(id, name) {
+    deleteFileId = id;
+    document.getElementById('delete-file-name').textContent = `文件: ${name}`;
+    document.getElementById('delete-password').value = '';
+    document.getElementById('delete-modal').style.display = 'flex';
+}
+function closeDeleteModal() {
+    document.getElementById('delete-modal').style.display = 'none';
+    deleteFileId = null;
+}
+async function confirmDelete() {
+    const password = document.getElementById('delete-password').value;
+    if (!password) { showToast('请输入密码', 'error'); return; }
+    try {
+        const res = await fetch(`/api/files/${deleteFileId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password }),
+        });
+        if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+        if (currentFileId === deleteFileId) { currentFileId = null; resetView(); }
+        showToast('已删除');
+        closeDeleteModal();
+        await loadFiles();
+    } catch (e) { showToast(e.message, 'error'); }
 }
 
 // ==================== File Selection ====================
@@ -403,8 +534,11 @@ async function popupAction(action) {
         await copyToClipboard(buildExportUrl(currentFileId, popupPath));
         showToast('已复制 MD 链接');
     } else if (action === 'prompt') {
-        await copyToClipboard(buildExportUrl(currentFileId, popupPath, 'prompt'));
-        showToast('已复制 Prompt 链接');
+        const url = buildExportUrl(currentFileId, popupPath, 'prompt');
+        const res = await fetch(url);
+        const text = await res.text();
+        await copyToClipboard(text);
+        showToast('已复制完整 Prompt');
     } else if (action === 'comment') {
         openCommentDialog();
     }
@@ -741,7 +875,14 @@ function renderMarkmap(markdown) {
         spacingHorizontal: 80, spacingVertical: 8,
     }, root);
 
-    setTimeout(() => markmapInstance?.fit(), 400);
+    setTimeout(() => {
+        walkTree(markmapInstance.state.data, (n) => {
+            n.payload = n.payload || {};
+            if (n.state?.depth >= 1) n.payload.fold = 1;
+        });
+        markmapInstance.setData(markmapInstance.state.data);
+        markmapInstance.fit();
+    }, 400);
     setTimeout(() => { setupNodeClick(); }, 1000);
     setTimeout(() => renderCommentBubbles(), 1200);
 }
@@ -808,7 +949,13 @@ async function loadCases(fileId, path, title) {
 }
 
 async function copyExportUrl(ep) { await copyToClipboard(buildExportUrl(currentFileId, decodeURIComponent(ep))); showToast('已复制分享链接'); }
-async function copyPromptUrl(ep) { await copyToClipboard(buildExportUrl(currentFileId, decodeURIComponent(ep), 'prompt')); showToast('已复制 Prompt 链接'); }
+async function copyPromptUrl(ep) {
+    const url = buildExportUrl(currentFileId, decodeURIComponent(ep), 'prompt');
+    const res = await fetch(url);
+    const text = await res.text();
+    await copyToClipboard(text);
+    showToast('已复制完整 Prompt');
+}
 function closeCaseDetail() { document.getElementById('case-detail').classList.remove('open'); }
 </script>
 </body>

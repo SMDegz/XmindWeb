@@ -19,7 +19,12 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             filename TEXT NOT NULL,
             upload_time TEXT NOT NULL,
-            root_title TEXT NOT NULL
+            root_title TEXT NOT NULL,
+            uploader TEXT NOT NULL DEFAULT '',
+            password TEXT NOT NULL DEFAULT '',
+            project TEXT NOT NULL DEFAULT '',
+            version TEXT NOT NULL DEFAULT '',
+            remark TEXT NOT NULL DEFAULT ''
         );
 
         CREATE TABLE IF NOT EXISTS topics (
@@ -46,20 +51,91 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_topics_path ON topics(path);
         CREATE INDEX IF NOT EXISTS idx_comments_topic_id ON comments(topic_id);
     """)
+
+    # Migrate: add new columns if they don't exist (for existing databases)
+    cursor = conn.execute("PRAGMA table_info(files)")
+    existing_cols = {row[1] for row in cursor.fetchall()}
+    for col, definition in [
+        ("uploader", "TEXT NOT NULL DEFAULT ''"),
+        ("password", "TEXT NOT NULL DEFAULT ''"),
+        ("project", "TEXT NOT NULL DEFAULT ''"),
+        ("version", "TEXT NOT NULL DEFAULT ''"),
+        ("remark", "TEXT NOT NULL DEFAULT ''"),
+    ]:
+        if col not in existing_cols:
+            conn.execute(f"ALTER TABLE files ADD COLUMN {col} {definition}")
+
     conn.commit()
     conn.close()
 
 
-def insert_file(filename: str, root_title: str) -> int:
+def insert_file(filename: str, root_title: str, uploader: str = "",
+                password: str = "", project: str = "",
+                version: str = "", remark: str = "") -> int:
     conn = get_conn()
     cursor = conn.execute(
-        "INSERT INTO files (filename, upload_time, root_title) VALUES (?, datetime('now'), ?)",
-        (filename, root_title),
+        "INSERT INTO files (filename, upload_time, root_title, uploader, password, project, version, remark) "
+        "VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?)",
+        (filename, root_title, uploader, password, project, version, remark),
     )
     file_id = cursor.lastrowid
     conn.commit()
     conn.close()
     return file_id
+
+
+def get_all_files(project: str = None, uploader: str = None, search: str = None) -> list[dict]:
+    conn = get_conn()
+    query = "SELECT id, filename, upload_time, root_title, uploader, project, version, remark FROM files WHERE 1=1"
+    params = []
+    if project:
+        query += " AND project = ?"
+        params.append(project)
+    if uploader:
+        query += " AND uploader = ?"
+        params.append(uploader)
+    if search:
+        query += " AND (root_title LIKE ? OR project LIKE ? OR remark LIKE ?)"
+        params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+    query += " ORDER BY upload_time DESC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_file(file_id: int) -> Optional[dict]:
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT id, filename, upload_time, root_title, uploader, project, version, remark FROM files WHERE id = ?",
+        (file_id,),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_file_password(file_id: int) -> Optional[str]:
+    conn = get_conn()
+    row = conn.execute("SELECT password FROM files WHERE id = ?", (file_id,)).fetchone()
+    conn.close()
+    return row["password"] if row else None
+
+
+def get_all_projects() -> list[str]:
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT DISTINCT project FROM files WHERE project != '' ORDER BY project"
+    ).fetchall()
+    conn.close()
+    return [r["project"] for r in rows]
+
+
+def get_all_uploaders() -> list[str]:
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT DISTINCT uploader FROM files WHERE uploader != '' ORDER BY uploader"
+    ).fetchall()
+    conn.close()
+    return [r["uploader"] for r in rows]
 
 
 def insert_topic(conn: sqlite3.Connection, file_id: int, parent_id, title: str, depth: int, path: str) -> int:
@@ -68,24 +144,6 @@ def insert_topic(conn: sqlite3.Connection, file_id: int, parent_id, title: str, 
         (file_id, parent_id, title, depth, path),
     )
     return cursor.lastrowid
-
-
-def get_all_files() -> list[dict]:
-    conn = get_conn()
-    rows = conn.execute(
-        "SELECT id, filename, upload_time, root_title FROM files ORDER BY upload_time DESC"
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-
-def get_file(file_id: int) -> Optional[dict]:
-    conn = get_conn()
-    row = conn.execute(
-        "SELECT id, filename, upload_time, root_title FROM files WHERE id = ?", (file_id,)
-    ).fetchone()
-    conn.close()
-    return dict(row) if row else None
 
 
 def get_topics_by_file(file_id: int) -> list[dict]:
