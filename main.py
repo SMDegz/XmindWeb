@@ -361,3 +361,48 @@ async def create_comment(file_id: int, request: Request):
 async def delete_comment(comment_id: int):
     database.delete_comment(comment_id)
     return {"detail": "已删除"}
+
+
+# ==================== Topic Edit API ====================
+
+
+class TopicEditRequest(BaseModel):
+    title: str
+
+
+@app.put("/api/topics/{topic_id}")
+async def edit_topic(topic_id: int, body: TopicEditRequest):
+    topic = database.get_topic(topic_id)
+    if not topic:
+        raise HTTPException(status_code=404, detail="节点不存在")
+    old_title = topic["title"]
+    new_title = body.title.strip()
+    if not new_title:
+        raise HTTPException(status_code=400, detail="标题不能为空")
+    # Update title and path
+    old_path = topic["path"]
+    new_path = old_path.rsplit("/" + old_title, 1)[0] + "/" + new_title if "/" in old_path else new_title
+    conn = database.get_conn()
+    conn.execute("UPDATE topics SET title = ?, path = ? WHERE id = ?", (new_title, new_path, topic_id))
+    # Update descendant paths
+    conn.execute("UPDATE topics SET path = REPLACE(path, ?, ?) WHERE path LIKE ?",
+                 (old_path + "/", new_path + "/", old_path + "/%"))
+    conn.commit()
+    conn.close()
+    return {"detail": "已更新", "id": topic_id, "title": new_title}
+
+
+class AddChildRequest(BaseModel):
+    title: str
+
+
+@app.post("/api/topics/{topic_id}/children")
+async def add_child(topic_id: int, body: AddChildRequest):
+    topic = database.get_topic(topic_id)
+    if not topic:
+        raise HTTPException(status_code=404, detail="父节点不存在")
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="标题不能为空")
+    new_id = database.add_child_topic(topic["file_id"], topic_id, title)
+    return {"detail": "已添加", "id": new_id, "title": title}

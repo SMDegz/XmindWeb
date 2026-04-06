@@ -183,6 +183,37 @@ def delete_file(file_id: int):
     conn.close()
 
 
+def update_topic_title(topic_id: int, title: str):
+    conn = get_conn()
+    conn.execute("UPDATE topics SET title = ? WHERE id = ?", (title, topic_id))
+    conn.commit()
+    conn.close()
+
+
+def get_topic(topic_id: int) -> Optional[dict]:
+    conn = get_conn()
+    row = conn.execute("SELECT id, file_id, parent_id, title, depth, path FROM topics WHERE id = ?", (topic_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def add_child_topic(file_id: int, parent_id: int, title: str) -> int:
+    parent = get_topic(parent_id)
+    if not parent:
+        return 0
+    depth = parent["depth"] + 1
+    path = f"{parent['path']}/{title}"
+    conn = get_conn()
+    cursor = conn.execute(
+        "INSERT INTO topics (file_id, parent_id, title, depth, path) VALUES (?, ?, ?, ?, ?)",
+        (file_id, parent_id, title, depth, path),
+    )
+    topic_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return topic_id
+
+
 # ==================== Comments ====================
 
 

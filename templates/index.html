@@ -184,6 +184,9 @@
             <svg id="markmap" style="width:100%;height:100%"></svg>
             <!-- Click popup menu -->
             <div class="node-popup" id="node-popup">
+                <button onclick="popupAction('edit')">✏️ 编辑节点</button>
+                <button onclick="popupAction('add-child')">➕ 新增子节点</button>
+                <hr>
                 <button onclick="popupAction('md')">🔗 复制链接 (.md)</button>
                 <button onclick="popupAction('prompt')">🤖 复制 Prompt</button>
                 <hr>
@@ -530,7 +533,35 @@ async function popupAction(action) {
     document.getElementById('node-popup').style.display = 'none';
     if (!popupPath || !currentFileId) return;
 
-    if (action === 'md') {
+    if (action === 'edit') {
+        const fo = document.querySelector(`foreignObject[data-topic-id="${popupTopicId}"]`);
+        const currentTitle = fo ? fo.textContent.trim() : getTopicTitleById(popupTopicId);
+        const newTitle = prompt('编辑节点标题:', currentTitle);
+        if (!newTitle || !newTitle.trim() || newTitle.trim() === currentTitle) return;
+        try {
+            const res = await fetch(`/api/topics/${popupTopicId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: newTitle.trim() }),
+            });
+            if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+            showToast('节点已更新');
+            await selectFile(currentFileId);
+        } catch (e) { showToast(e.message, 'error'); }
+    } else if (action === 'add-child') {
+        const childTitle = prompt('新增子节点标题:');
+        if (!childTitle || !childTitle.trim()) return;
+        try {
+            const res = await fetch(`/api/topics/${popupTopicId}/children`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: childTitle.trim() }),
+            });
+            if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+            showToast('子节点已添加');
+            await selectFile(currentFileId);
+        } catch (e) { showToast(e.message, 'error'); }
+    } else if (action === 'md') {
         await copyToClipboard(buildExportUrl(currentFileId, popupPath));
         showToast('已复制 MD 链接');
     } else if (action === 'prompt') {
