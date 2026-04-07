@@ -141,12 +141,22 @@ async def get_mindmap(file_id: int):
     if not f:
         raise HTTPException(status_code=404, detail="文件不存在")
     topics = database.get_topics_by_file(file_id)
-    lines = [f"# {f['root_title']}"]
+    # Build tree structure to ensure correct order (children follow parent)
+    by_parent: dict[int | None, list] = {}
     for t in topics:
-        if t["depth"] == 0:
-            continue
-        indent = "  " * t["depth"]
-        lines.append(f"{indent}- {t['title']}")
+        by_parent.setdefault(t["parent_id"], []).append(t)
+    lines = [f"# {f['root_title']}"]
+
+    def walk(parent_id):
+        for t in by_parent.get(parent_id, []):
+            if t["depth"] == 0:
+                walk(t["id"])
+                continue
+            indent = "  " * t["depth"]
+            lines.append(f"{indent}- {t['title']}")
+            walk(t["id"])
+
+    walk(None)
     markdown = "\n".join(lines)
     return {"markdown": markdown, "root_title": f["root_title"]}
 
