@@ -545,8 +545,21 @@ async function popupAction(action) {
                 body: JSON.stringify({ title: newTitle.trim() }),
             });
             if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+            // Update topicsCache
+            const topic = topicsCache.find(t => t.id === popupTopicId);
+            if (topic) {
+                const oldPath = topic.path;
+                topic.title = newTitle.trim();
+                const idx = oldPath.lastIndexOf('/' + currentTitle);
+                topic.path = idx >= 0 ? oldPath.substring(0, idx) + '/' + newTitle.trim() : newTitle.trim();
+                for (const t of topicsCache) {
+                    if (t.path.startsWith(oldPath + '/')) {
+                        t.path = topic.path + t.path.slice(oldPath.length);
+                    }
+                }
+            }
+            refreshMarkmapFromCache();
             showToast('节点已更新');
-            await selectFile(currentFileId);
         } catch (e) { showToast(e.message, 'error'); }
     } else if (action === 'add-child') {
         const childTitle = prompt('新增子节点标题:');
@@ -558,8 +571,21 @@ async function popupAction(action) {
                 body: JSON.stringify({ title: childTitle.trim() }),
             });
             if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+            const data = await res.json();
+            // Add to topicsCache
+            const parent = topicsCache.find(t => t.id === popupTopicId);
+            if (parent) {
+                topicsCache.push({
+                    id: data.id,
+                    file_id: parent.file_id,
+                    parent_id: popupTopicId,
+                    title: childTitle.trim(),
+                    depth: parent.depth + 1,
+                    path: parent.path + '/' + childTitle.trim(),
+                });
+            }
+            refreshMarkmapFromCache(popupTopicId);
             showToast('子节点已添加');
-            await selectFile(currentFileId);
         } catch (e) { showToast(e.message, 'error'); }
     } else if (action === 'md') {
         await copyToClipboard(buildExportUrl(currentFileId, popupPath));
@@ -709,16 +735,12 @@ function highlightTopicComments(topicId) {
     }, 350);
 }
 
-function renderCommentBubbles() {
-    document.querySelectorAll('.comment-bubble-svg').forEach(el => el.remove());
-
+function annotateSvgNodes() {
     if (!markmapInstance || !topicsCache.length) return;
-
     const svgEl = document.querySelector('#markmap');
     if (!svgEl) return;
 
-    // Annotate each foreignObject with topic ID
-    // Match by title text, using order to handle duplicates
+    // Annotate foreignObject elements with topic ID
     const fos = svgEl.querySelectorAll('foreignObject');
     const usedIds = new Set();
     for (const fo of fos) {
@@ -730,6 +752,97 @@ function renderCommentBubbles() {
             usedIds.add(topic.id);
         }
     }
+
+    // Also tag markmap tree nodes with topicId for direct lookup
+    const mmFos = [];
+    walkTree(markmapInstance.state.data, (n) => { mmFos.push(n); });
+    const usedMmIds = new Set();
+    for (const n of mmFos) {
+        const text = n.content?.replace(/<[^>]*>/g, '').trim();
+        if (!text) continue;
+        const topic = topicsCache.find(t => t.title === text && !usedMmIds.has(t.id));
+        if (topic) {
+            n.payload = n.payload || {};
+            n.payload.topicId = topic.id;
+            usedMmIds.add(topic.id);
+        }
+    }
+}
+
+function findMarkmapNodeByTopicId(topicId) {
+    let result = null;
+    walkTree(markmapInstance.state.data, (n) => {
+        if (n.payload?.topicId == topicId) result = n;
+    });
+    return result;
+}
+
+// Rebuild markmap from topicsCache without full page reload.
+// Preserves expand/collapse state and zoom/pan position.
+function refreshMarkmapFromCache(expandTopicId) {
+    // 1. Build markdown from topicsCache
+    const root = topicsCache.find(t => t.depth === 0);
+    if (!root) return;
+    const byParent = {};
+    for (const t of topicsCache) {
+        byParent[t.parent_id] = byParent[t.parent_id] || [];
+        byParent[t.parent_id].push(t);
+    }
+    const lines = [`# ${root.title}`];
+    function walk(pid) {
+        for (const t of (byParent[pid] || [])) {
+            if (t.depth === 0) { walk(t.id); continue; }
+            lines.push('  '.repeat(t.depth) + '- ' + t.title);
+            walk(t.id);
+        }
+    }
+    walk(null);
+
+    // 2. Transform to markmap tree
+    const { Transformer } = window.markmap;
+    const transformer = new Transformer();
+    const { root: newRoot } = transformer.transform(lines.join('\n'));
+
+    // 3. Collect current fold states by content+depth
+    const foldMap = {};
+    walkTree(markmapInstance.state.data, (n) => {
+        const key = (n.state?.depth || 0) + ':' + (n.content?.replace(/<[^>]*>/g, '').trim());
+        foldMap[key] = n.payload?.fold;
+    });
+
+    // 4. Apply fold states to new tree + expand target node's ancestors
+    walkTree(newRoot, (n) => {
+        n.payload = n.payload || {};
+        const key = (n.state?.depth || 0) + ':' + (n.content?.replace(/<[^>]*>/g, '').trim());
+        if (key in foldMap) n.payload.fold = foldMap[key];
+    });
+
+    // Expand ancestors of the target topic
+    if (expandTopicId) {
+        const topic = topicsCache.find(t => t.id == expandTopicId);
+        if (topic) {
+            const pathParts = topic.path.split('/');
+            walkTree(newRoot, (n) => {
+                const text = n.content?.replace(/<[^>]*>/g, '').trim();
+                if (pathParts.includes(text)) n.payload.fold = 0;
+            });
+        }
+    }
+
+    // 5. Update markmap without fit
+    markmapInstance.setData(newRoot);
+    setTimeout(() => { annotateSvgNodes(); renderCommentBubbles(); }, 150);
+}
+
+function renderCommentBubbles() {
+    document.querySelectorAll('.comment-bubble-svg').forEach(el => el.remove());
+
+    if (!markmapInstance || !topicsCache.length) return;
+
+    const svgEl = document.querySelector('#markmap');
+    if (!svgEl) return;
+
+    annotateSvgNodes();
 
     if (!Object.keys(commentsCache).length) return;
 
@@ -896,7 +1009,7 @@ function renderMarkmap(markdown) {
     if (scripts) window.markmap.loadJS(scripts, { getMarkmap: () => window.markmap });
 
     markmapInstance = Markmap.create("#markmap", {
-        autoFit: true,
+        autoFit: false,
         color: (node) => {
             const colors = ['#4a90d9', '#27ae60', '#e67e22', '#8e44ad', '#e74c3c', '#16a085'];
             return colors[node.state?.depth % colors.length] || '#4a90d9';
