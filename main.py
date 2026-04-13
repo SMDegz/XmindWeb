@@ -2,6 +2,7 @@ import os
 import socket
 import shutil
 import hashlib
+import json
 from typing import Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Query, Form
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
@@ -27,6 +28,88 @@ templates = Jinja2Templates(directory=TEMPLATE_DIR)
 @app.on_event("startup")
 def startup():
     database.init_db()
+
+
+def _load_sheet_names(raw_sheet_names: str) -> list[str]:
+    try:
+        sheet_names = json.loads(raw_sheet_names or "[]")
+    except Exception:
+        return []
+    return sheet_names if isinstance(sheet_names, list) else []
+
+
+def _group_topics_by_sheet(topics: list[dict]) -> dict[int, list[dict]]:
+    grouped: dict[int, list[dict]] = {}
+    for topic in topics:
+        sheet_index = topic.get("sheet_index", 0) or 0
+        grouped.setdefault(sheet_index, []).append(topic)
+    return grouped
+
+
+def _get_non_leaf_topic_ids(topics: list[dict]) -> set[int]:
+    return {
+        topic["parent_id"]
+        for topic in topics
+        if topic.get("parent_id") is not None
+    }
+
+
+def _count_leaf_topics(topics: list[dict]) -> int:
+    non_leaf_topic_ids = _get_non_leaf_topic_ids(topics)
+    return sum(
+        1
+        for topic in topics
+        if topic.get("depth", 0) > 0 and topic.get("id") not in non_leaf_topic_ids
+    )
+
+
+def _build_sheet_stats(sheet_names: list[str], topics_by_sheet: dict[int, list[dict]]) -> list[dict]:
+    sheet_indexes = set(topics_by_sheet.keys())
+    if sheet_names:
+        sheet_indexes.update(range(len(sheet_names)))
+    if not sheet_indexes:
+        return []
+
+    stats = []
+    for sheet_index in range(max(sheet_indexes) + 1):
+        topics = topics_by_sheet.get(sheet_index, [])
+        stats.append({
+            "index": sheet_index,
+            "name": sheet_names[sheet_index] if sheet_index < len(sheet_names) else f"画布{sheet_index + 1}",
+            "topic_count": _count_leaf_topics(topics),
+        })
+    return stats
+
+
+def _normalize_file_sheet_meta(file_id: int, file_data: dict, all_topics: Optional[list[dict]] = None):
+    file_data = dict(file_data)
+    original_root_title = file_data.get("root_title") or ""
+    original_sheet_names = file_data.get("sheet_names") or "[]"
+    stored_sheet_names = _load_sheet_names(original_sheet_names)
+
+    if all_topics is None:
+        all_topics = database.get_topics_by_file(file_id)
+    topics_by_sheet = _group_topics_by_sheet(all_topics)
+
+    sheet_indexes = set(topics_by_sheet.keys())
+    if stored_sheet_names:
+        sheet_indexes.update(range(len(stored_sheet_names)))
+
+    if not sheet_indexes:
+        return file_data, stored_sheet_names, topics_by_sheet
+
+    resolved_sheet_names = []
+    for sheet_index in range(max(sheet_indexes) + 1):
+        stored_name = stored_sheet_names[sheet_index] if sheet_index < len(stored_sheet_names) else ""
+        resolved_sheet_names.append(
+            xmind_parser.resolve_sheet_title(stored_name, topics_by_sheet.get(sheet_index, []), sheet_index)
+        )
+
+    root_title = resolved_sheet_names[0] if resolved_sheet_names else original_root_title
+    sheet_names_json = json.dumps(resolved_sheet_names, ensure_ascii=False)
+    file_data["root_title"] = root_title
+    file_data["sheet_names"] = sheet_names_json
+    return file_data, resolved_sheet_names, topics_by_sheet
 
 
 # ==================== 页面 ====================
@@ -69,19 +152,22 @@ async def upload_xmind(
     pwd_hash = hashlib.sha256(password.encode()).hexdigest() if password else ""
 
     # 存入数据库
+    sheet_names = json.dumps([s["title"] for s in parsed["sheets"]], ensure_ascii=False)
     file_id = database.insert_file(
-        file.filename, parsed["root_title"], uploader, pwd_hash, project, version, remark
+        file.filename, parsed["root_title"], uploader, pwd_hash, project, version, remark, sheet_names
     )
 
-    # 逐条插入 topics，建立临时ID -> 数据库ID 映射以正确关联 parent
-    topics = parsed["topics"]
-    id_map = {}  # 临时 ID -> 数据库 ID
+    # 逐条插入 topics，每个 sheet 单独处理
+    total_topics = 0
     conn = database.get_conn()
     try:
-        for t in topics:
-            db_parent = id_map.get(t["parent_id"]) if t["parent_id"] else None
-            db_id = database.insert_topic(conn, file_id, db_parent, t["title"], t["depth"], t["path"])
-            id_map[t["id"]] = db_id
+        for sheet_idx, sheet in enumerate(parsed["sheets"]):
+            id_map = {}  # 临时 ID -> 数据库 ID (per sheet)
+            for t in sheet["topics"]:
+                db_parent = id_map.get(t["parent_id"]) if t["parent_id"] else None
+                db_id = database.insert_topic(conn, file_id, db_parent, t["title"], t["depth"], t["path"], sheet_idx)
+                id_map[t["id"]] = db_id
+            total_topics += len(sheet["topics"])
         conn.commit()
     finally:
         conn.close()
@@ -90,7 +176,8 @@ async def upload_xmind(
         "id": file_id,
         "filename": file.filename,
         "root_title": parsed["root_title"],
-        "topic_count": len(topics),
+        "topic_count": total_topics,
+        "sheet_count": len(parsed["sheets"]),
     }
 
 
@@ -103,12 +190,17 @@ async def list_files(
 
 
 @app.get("/api/files/{file_id}")
-async def get_file_detail(file_id: int):
+async def get_file_detail(file_id: int, sheet: int = 0):
     f = database.get_file(file_id)
     if not f:
         raise HTTPException(status_code=404, detail="文件不存在")
-    topics = database.get_topics_by_file(file_id)
-    return {"file": f, "topics": topics}
+    all_topics = database.get_topics_by_file(file_id)
+    f, sheet_names, topics_by_sheet = _normalize_file_sheet_meta(file_id, f, all_topics)
+    sheet_stats = _build_sheet_stats(sheet_names, topics_by_sheet)
+    f["sheet_count"] = len(sheet_stats)
+    f["total_topic_count"] = sum(stat["topic_count"] for stat in sheet_stats)
+    topics = topics_by_sheet.get(sheet, [])
+    return {"file": f, "topics": topics, "sheet_stats": sheet_stats}
 
 
 class DeleteRequest(BaseModel):
@@ -122,8 +214,9 @@ async def delete_file(file_id: int, body: DeleteRequest):
         raise HTTPException(status_code=404, detail="文件不存在")
 
     # 验证密码：文件密码或管理员密码
+    stored_password = database.get_file_password(file_id) or ""
     pwd_hash = hashlib.sha256(body.password.encode()).hexdigest()
-    if pwd_hash != f.get("password", "") and body.password != ADMIN_PASSWORD:
+    if pwd_hash != stored_password and body.password != ADMIN_PASSWORD:
         raise HTTPException(status_code=403, detail="密码错误")
 
     # 删除上传文件
@@ -135,17 +228,23 @@ async def delete_file(file_id: int, body: DeleteRequest):
 
 
 @app.get("/api/files/{file_id}/mindmap")
-async def get_mindmap(file_id: int):
+async def get_mindmap(file_id: int, sheet: int = 0):
     """返回 Markmap 可用的 Markdown 文本"""
     f = database.get_file(file_id)
     if not f:
         raise HTTPException(status_code=404, detail="文件不存在")
-    topics = database.get_topics_by_file(file_id)
+    all_topics = database.get_topics_by_file(file_id)
+    f, sheet_names, topics_by_sheet = _normalize_file_sheet_meta(file_id, f, all_topics)
+    topics = topics_by_sheet.get(sheet, [])
+    if not topics:
+        raise HTTPException(status_code=404, detail="画布无数据")
+    root_title = sheet_names[sheet] if sheet < len(sheet_names) else f["root_title"]
+
     # Build tree structure to ensure correct order (children follow parent)
     by_parent: dict[int | None, list] = {}
     for t in topics:
         by_parent.setdefault(t["parent_id"], []).append(t)
-    lines = [f"# {f['root_title']}"]
+    lines = [f"# {root_title}"]
 
     def walk(parent_id):
         for t in by_parent.get(parent_id, []):
@@ -158,13 +257,13 @@ async def get_mindmap(file_id: int):
 
     walk(None)
     markdown = "\n".join(lines)
-    return {"markdown": markdown, "root_title": f["root_title"]}
+    return {"markdown": markdown, "root_title": root_title}
 
 
 @app.get("/api/files/{file_id}/tree")
-async def get_tree(file_id: int):
+async def get_tree(file_id: int, sheet: int = 0):
     """返回树形 JSON 结构"""
-    topics = database.get_topics_by_file(file_id)
+    topics = database.get_topics_by_file(file_id, sheet_index=sheet)
     if not topics:
         raise HTTPException(status_code=404, detail="文件不存在或无数据")
 
@@ -179,26 +278,39 @@ async def get_tree(file_id: int):
             parent = node_map.get(t["parent_id"])
             if parent:
                 parent["children"].append(node)
+    def fill_topic_count(node: dict) -> int:
+        if not node["children"]:
+            node["topic_count"] = 0
+            return 1 if node["depth"] > 0 else 0
+
+        descendant_count = 0
+        for child in node["children"]:
+            descendant_count += fill_topic_count(child)
+        node["topic_count"] = descendant_count
+        return descendant_count
+
+    for node in root_nodes:
+        fill_topic_count(node)
     return root_nodes
 
 
 @app.get("/api/modules/{file_id}")
-async def get_modules(file_id: int, depth: int = 3):
+async def get_modules(file_id: int, depth: int = 3, sheet: int = 0):
     """返回模块路径列表"""
     f = database.get_file(file_id)
     if not f:
         raise HTTPException(status_code=404, detail="文件不存在")
-    return database.get_modules(file_id, min_depth=1, max_depth=depth)
+    return database.get_modules(file_id, min_depth=1, max_depth=depth, sheet_index=sheet)
 
 
 @app.get("/api/cases/{file_id}/{module_path:path}")
-async def get_cases(file_id: int, module_path: str):
+async def get_cases(file_id: int, module_path: str, sheet: int = 0):
     """按模块路径返回用例（该模块下的所有子节点)"""
     f = database.get_file(file_id)
     if not f:
         raise HTTPException(status_code=404, detail="文件不存在")
 
-    all_topics = database.get_topics_by_file(file_id)
+    all_topics = database.get_topics_by_file(file_id, sheet_index=sheet)
 
     matched = [t for t in all_topics if t["path"] == module_path]
     if not matched:
@@ -208,6 +320,7 @@ async def get_cases(file_id: int, module_path: str):
 
     result = []
     descendants = [t for t in all_topics if t["path"].startswith(parent["path"] + "/")]
+    non_leaf_topic_ids = _get_non_leaf_topic_ids(all_topics)
     for d in descendants:
         result.append({
             "title": d["title"],
@@ -215,12 +328,13 @@ async def get_cases(file_id: int, module_path: str):
             "path": d["path"],
         })
 
-    return {"module": parent["title"], "path": parent["path"], "cases": result}
+    case_count = sum(1 for d in descendants if d["id"] not in non_leaf_topic_ids)
+    return {"module": parent["title"], "path": parent["path"], "cases": result, "case_count": case_count}
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
 
 
 # ==================== Export API ====================
