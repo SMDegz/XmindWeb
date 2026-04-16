@@ -282,7 +282,22 @@ def insert_comment(file_id: int, topic_id: int, author: str, content: str) -> in
 def get_comments_by_file(file_id: int) -> list[dict]:
     conn = get_conn()
     rows = conn.execute(
-        "SELECT id, topic_id, file_id, author, content, created_at FROM comments WHERE file_id = ? ORDER BY topic_id, created_at",
+        """
+        SELECT
+            c.id,
+            c.topic_id,
+            c.file_id,
+            c.author,
+            c.content,
+            c.created_at,
+            t.sheet_index,
+            t.title AS topic_title,
+            t.path AS topic_path
+        FROM comments c
+        LEFT JOIN topics t ON t.id = c.topic_id
+        WHERE c.file_id = ?
+        ORDER BY COALESCE(t.sheet_index, 0), c.topic_id, c.created_at
+        """,
         (file_id,),
     ).fetchall()
     conn.close()

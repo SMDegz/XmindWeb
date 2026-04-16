@@ -290,6 +290,7 @@ let currentFileId = null;
 let currentSheetIndex = 0;
 let currentSheetNames = [];
 let currentSheetStats = [];
+let selectFileRequestToken = 0;
 let markmapInstance = null;
 let markmapRenderVersion = 0;
 let filesCache = [];
@@ -485,16 +486,35 @@ function applyFileDetailState(fileId, detail) {
     renderSheetTabs();
 }
 
-async function refreshCurrentFileDetail(fileId, sheetIndex = currentSheetIndex) {
+function isCurrentSheetComment(comment) {
+    if (comment?.sheet_index == null) return !!topicsCache.find(t => t.id === comment?.topic_id);
+    return Number(comment.sheet_index) === Number(currentSheetIndex);
+}
+
+function getCurrentSheetComments() {
+    const currentComments = [];
+    for (const comments of Object.values(commentsCache)) {
+        for (const comment of comments) {
+            if (isCurrentSheetComment(comment)) currentComments.push(comment);
+        }
+    }
+    return currentComments;
+}
+
+async function refreshCurrentFileDetail(fileId, sheetIndex = currentSheetIndex, requestToken = selectFileRequestToken) {
     const detailRes = await fetch(`/api/files/${fileId}?sheet=${sheetIndex}`);
     if (!detailRes.ok) throw new Error('Refresh detail failed');
     const detail = await detailRes.json();
+    if (requestToken !== selectFileRequestToken || currentFileId !== fileId || currentSheetIndex !== sheetIndex) {
+        return null;
+    }
     topicsCache = detail.topics || [];
     applyFileDetailState(fileId, detail);
     return detail;
 }
 
 async function selectFile(id, sheetIndex = 0) {
+    const requestToken = ++selectFileRequestToken;
     currentFileId = id;
     currentSheetIndex = sheetIndex;
     renderFileList();
@@ -502,10 +522,12 @@ async function selectFile(id, sheetIndex = 0) {
     document.getElementById('empty-state').style.display = 'none';
     document.getElementById('mindmap-container').style.display = 'block';
 
-    await refreshCurrentFileDetail(id, sheetIndex);
+    const detail = await refreshCurrentFileDetail(id, sheetIndex, requestToken);
+    if (!detail) return;
 
     const res = await fetch(`/api/files/${id}/mindmap?sheet=${sheetIndex}`);
     const data = await res.json();
+    if (requestToken !== selectFileRequestToken || currentFileId !== id || currentSheetIndex !== sheetIndex) return;
     renderMarkmap(data.markdown);
     loadModules(id);
 
@@ -514,7 +536,7 @@ async function selectFile(id, sheetIndex = 0) {
     commentsVisible = false;
     updateCommentsBtn();
     document.getElementById('comments-panel').classList.remove('open');
-    await loadComments(id);
+    await loadComments(id, requestToken);
 }
 
 function renderSheetTabs() {
@@ -686,10 +708,11 @@ async function popupAction(action) {
 }
 
 // ==================== Comments ====================
-async function loadComments(fileId) {
+async function loadComments(fileId, requestToken = selectFileRequestToken) {
     try {
         const res = await fetch(`/api/comments/${fileId}`);
         const comments = await res.json();
+        if (requestToken !== selectFileRequestToken || currentFileId !== fileId) return;
         commentsCache = {};
         for (const c of comments) {
             if (!commentsCache[c.topic_id]) commentsCache[c.topic_id] = [];
@@ -767,13 +790,10 @@ function renderCommentsPanel() {
     const body = document.getElementById('comments-panel-body');
     const countEl = document.getElementById('comments-count');
 
-    // Collect all comments
-    const allComments = [];
-    for (const [topicId, comments] of Object.entries(commentsCache)) {
-        for (const c of comments) {
-            allComments.push({ ...c, topicTitle: getTopicTitleById(parseInt(topicId)) });
-        }
-    }
+    const allComments = getCurrentSheetComments().map((comment) => ({
+        ...comment,
+        topicTitle: comment.topic_title || getTopicTitleById(parseInt(comment.topic_id)),
+    }));
     countEl.textContent = allComments.length;
 
     if (!allComments.length) {
@@ -1039,15 +1059,23 @@ function renderCommentBubbles() {
 
     annotateSvgNodes();
 
-    if (!Object.keys(commentsCache).length) return;
+    const currentComments = getCurrentSheetComments();
+    if (!currentComments.length) return;
+
+    const commentCountMap = {};
+    for (const comment of currentComments) {
+        const topicId = String(comment.topic_id);
+        commentCountMap[topicId] = (commentCountMap[topicId] || 0) + 1;
+    }
 
     // Render bubbles using data-topic-id
     const ns = 'http://www.w3.org/2000/svg';
+    const fos = svgEl.querySelectorAll('foreignObject');
     for (const fo of fos) {
         const tid = fo.getAttribute('data-topic-id');
-        if (!tid || !commentsCache[tid]) continue;
+        if (!tid || !commentCountMap[tid]) continue;
 
-        const count = commentsCache[tid].length;
+        const count = commentCountMap[tid];
         const w = parseFloat(fo.getAttribute('width')) || 60;
         const h = parseFloat(fo.getAttribute('height')) || 22;
 
@@ -1265,9 +1293,12 @@ async function loadModules(fileId) {
     const treeRes = await fetch(`/api/files/${fileId}/tree?sheet=${currentSheetIndex}`);
     const tree = await treeRes.json();
     const moduleTree = document.getElementById('module-tree');
-    const f = filesCache.find(x => x.id === fileId);
+    const f = null;
     const currentSheetStat = currentSheetStats.find(x => x.index === currentSheetIndex);
+    const currentSheetName = currentSheetStat?.name || currentSheetNames[currentSheetIndex] || '';
+    document.getElementById('module-file-name').textContent = currentSheetName ? `${currentSheetName}${currentSheetStat ? ` · ${currentSheetStat.topic_count}` : ''}` : '';
     document.getElementById('module-file-name').textContent = f ? `${f.root_title}${currentSheetStat ? ` · ${currentSheetStat.topic_count}` : ''}` : '';
+    document.getElementById('module-file-name').textContent = currentSheetName ? `${currentSheetName}${currentSheetStat ? ` · ${currentSheetStat.topic_count}` : ''}` : '';
     moduleTree.innerHTML = '';
     function renderNode(node, depth = 0) {
         const div = document.createElement('div');
