@@ -1,0 +1,22 @@
+INFO:     Started server process [250668]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8030 (Press CTRL+C to quit)
+Accept failed on a socket
+socket: <asyncio.TransportSocket fd=284, family=2, type=1, proto=6, laddr=('0.0.0.0', 8030)>
+Traceback (most recent call last):
+  File "C:\Users\hejinxiang\AppData\Local\Programs\Python\Python313\Lib\asyncio\proactor_events.py", line 845, in loop
+    conn, addr = f.result()
+                 ~~~~~~~~^^
+  File "C:\Users\hejinxiang\AppData\Local\Programs\Python\Python313\Lib\asyncio\windows_events.py", line 804, in _poll
+    value = callback(transferred, key, ov)
+  File "C:\Users\hejinxiang\AppData\Local\Programs\Python\Python313\Lib\asyncio\windows_events.py", line 556, in finish_accept
+    ov.getresult()
+    ~~~~~~~~~~~~^^
+OSError: [WinError 64] 指定的网络名不再可用。
+Task exception was never retrieved
+future: <Task finished name='Task-4' coro=<IocpProactor.accept.<locals>.accept_coro() done, defined at C:\Users\hejinxiang\AppData\Local\Programs\Python\Python313\Lib\asyncio\windows_events.py:564> exception=OSError(22, '指定的网络名不再可用。', None, 64, None)>
+Traceback (most recent call last):
+  File "C:\Users\hejinxiang\AppData\Local\Programs\Python\Python313\Lib\asyncio\windows_events.py", line 567, in accept_coro
+    await future
+OSError: [WinError 64] 指定的网络名不再可用。

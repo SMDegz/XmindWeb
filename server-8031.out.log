@@ -1,0 +1,29 @@
+INFO:     127.0.0.1:56813 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56828 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56839 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57050 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50521 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50521 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50522 - "GET /api/server-info HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50576 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50522 - "GET /api/files HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50522 - "GET /api/files/15?sheet=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50522 - "GET /api/files/15/mindmap?sheet=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50522 - "GET /api/files/15/tree?sheet=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50576 - "GET /api/comments/15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50576 - "GET /api/files/15?sheet=4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50576 - "GET /api/files/15/mindmap?sheet=4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50576 - "GET /api/files/15/tree?sheet=4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50522 - "GET /api/comments/15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50522 - "GET /api/files/15?sheet=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50522 - "GET /api/files/15/mindmap?sheet=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50522 - "GET /api/files/15/tree?sheet=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50576 - "GET /api/comments/15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50726 - "GET /api/files/15?sheet=3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50726 - "GET /api/files/15/mindmap?sheet=3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50726 - "GET /api/files/15/tree?sheet=3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50727 - "GET /api/comments/15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50727 - "GET /api/files/15?sheet=4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50727 - "GET /api/files/15/mindmap?sheet=4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50727 - "GET /api/files/15/tree?sheet=4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50726 - "GET /api/comments/15 HTTP/1.1" 200 OK
