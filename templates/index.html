@@ -9,6 +9,20 @@
     <script src="https://cdn.jsdelivr.net/npm/markmap-view"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --sidebar-width: 300px;
+            --sidebar-bg: linear-gradient(180deg, #f7f9fc 0%, #eef2f7 100%);
+            --sidebar-surface: rgba(255, 255, 255, 0.78);
+            --sidebar-surface-strong: rgba(255, 255, 255, 0.96);
+            --sidebar-border: #dfe5ee;
+            --sidebar-border-strong: #cfd8e3;
+            --sidebar-text: #2b3442;
+            --sidebar-muted: #6f7d90;
+            --sidebar-accent: #2667a8;
+            --sidebar-accent-soft: rgba(38, 103, 168, 0.14);
+            --sidebar-accent-strong: #174b79;
+            --sidebar-warm: #5e7fa7;
+        }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f0f2f5; color: #333; height: 100vh; display: flex; flex-direction: column; }
 
         /* Header */
@@ -30,19 +44,80 @@
         .main { flex: 1; display: flex; overflow: hidden; }
 
         /* Sidebar */
-        .sidebar { width: 280px; background: #fff; border-right: 1px solid #e0e0e0; display: flex; flex-direction: column; flex-shrink: 0; }
-        .sidebar-header { padding: 14px 16px; border-bottom: 1px solid #eee; font-size: 14px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
-        .file-list { flex: 1; overflow-y: auto; padding: 8px; }
-        .file-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; transition: all 0.15s; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
-        .file-item:hover { background: #f5f7fa; }
-        .file-item.active { background: #e8f0fe; border: 1px solid #4a90d9; }
-        .file-info { flex: 1; min-width: 0; }
-        .file-name { font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 8px; min-width: 0; }
-        .file-name-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .file-topic-count { flex-shrink: 0; padding: 1px 6px; border-radius: 999px; background: #f0f5ff; color: #4a90d9; font-size: 11px; font-weight: 600; }
-        .file-meta { font-size: 11px; color: #999; margin-top: 3px; }
-        .file-delete { opacity: 0; transition: opacity 0.15s; }
-        .file-item:hover .file-delete { opacity: 1; }
+        .sidebar { width: var(--sidebar-width); background: var(--sidebar-bg); border-right: 1px solid var(--sidebar-border); display: flex; flex-direction: column; flex-shrink: 0; position: relative; box-shadow: inset -1px 0 0 rgba(255,255,255,0.55); }
+        .sidebar::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at top left, rgba(255,255,255,0.58), transparent 40%), linear-gradient(135deg, rgba(38,103,168,0.04), transparent 32%); pointer-events: none; }
+        .sidebar > * { position: relative; z-index: 1; }
+        .sidebar-header { padding: 14px 14px 12px; border-bottom: 1px solid rgba(207,216,227,0.95); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .sidebar-title-group { min-width: 0; }
+        .sidebar-kicker { font-size: 10px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--sidebar-warm); margin-bottom: 4px; }
+        .sidebar-label-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+        .sidebar-label { font-size: 16px; font-weight: 700; color: var(--sidebar-text); }
+        .sidebar-count { font-size: 11px; color: var(--sidebar-muted); }
+        .tree-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 10px 12px; border-bottom: 1px solid rgba(207,216,227,0.82); }
+        .tree-actions .btn { justify-content: center; min-height: 30px; padding: 6px 8px; border-radius: 8px; background: var(--sidebar-surface-strong); border: 1px solid rgba(207,216,227,0.95); color: var(--sidebar-text); box-shadow: none; font-size: 12px; }
+        .tree-actions .btn:hover { border-color: rgba(38,103,168,0.28); color: var(--sidebar-accent-strong); background: rgba(255,255,255,0.98); }
+        .tree-actions .btn-danger { grid-column: span 3; background: var(--sidebar-surface-strong); border: 1px solid rgba(207,216,227,0.95); color: #b54848; }
+        .tree-actions .btn-danger:hover { border-color: rgba(198,95,95,0.65); color: #fff; background: #d85b5b; }
+        .sidebar-body { flex: 1; overflow-y: auto; padding: 12px; }
+        .sidebar-body::-webkit-scrollbar { width: 8px; }
+        .sidebar-body::-webkit-scrollbar-thumb { background: rgba(122,137,158,0.24); border-radius: 999px; }
+        .sidebar-path-card,
+        .sidebar-block { background: rgba(255,255,255,0.82); border: 1px solid rgba(207,216,227,0.95); border-radius: 12px; box-shadow: 0 6px 16px rgba(56,74,96,0.05); }
+        .sidebar-path-card { padding: 10px 12px; margin-bottom: 10px; }
+        .sidebar-current-label { font-size: 11px; color: var(--sidebar-muted); letter-spacing: 0.08em; text-transform: uppercase; }
+        .sidebar-current-path { margin-top: 4px; font-size: 12px; color: var(--sidebar-text); line-height: 1.5; word-break: break-word; }
+        .sidebar-block { padding: 8px; }
+        .sidebar-block + .sidebar-block { margin-top: 10px; }
+        .sidebar-block-head { display: flex; justify-content: space-between; align-items: center; padding: 2px 4px 8px; }
+        .sidebar-block-title { font-size: 12px; font-weight: 700; color: var(--sidebar-text); }
+        .sidebar-block-meta { font-size: 11px; color: var(--sidebar-muted); }
+        .sidebar-block-caption { padding: 0 4px 8px; font-size: 11px; color: var(--sidebar-muted); }
+        .directory-tree,
+        .current-file-list { display: flex; flex-direction: column; gap: 2px; }
+        .directory-node { position: relative; }
+        .directory-row,
+        .file-row { display: flex; align-items: flex-start; gap: 6px; border-radius: 8px; cursor: pointer; transition: background 0.16s ease, color 0.16s ease; }
+        .directory-row { min-height: 28px; padding: 4px 6px 4px calc(6px + var(--dir-depth, 0) * 12px); }
+        .directory-row:hover,
+        .file-row:hover { background: rgba(38,103,168,0.08); }
+        .directory-row.active,
+        .file-row.active { background: rgba(38,103,168,0.12); color: var(--sidebar-accent-strong); }
+        .tree-toggle { width: 16px; min-width: 16px; height: 20px; min-height: 20px; border-radius: 6px; background: transparent; color: var(--sidebar-muted); flex-shrink: 0; padding: 0; border: none; display: inline-flex; align-items: center; justify-content: center; }
+        .tree-toggle:hover { background: rgba(38,103,168,0.08); color: var(--sidebar-accent-strong); }
+        .tree-toggle-icon { display: inline-flex; transition: transform 0.18s ease; font-size: 10px; line-height: 1; }
+        .directory-node.expanded > .directory-row .tree-toggle-icon { transform: rotate(90deg); }
+        .tree-toggle.ghost { opacity: 0; pointer-events: none; }
+        .directory-main { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .directory-name { min-width: 0; font-size: 12px; color: var(--sidebar-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .directory-meta { flex-shrink: 0; font-size: 11px; color: var(--sidebar-muted); }
+        .directory-row.active .directory-name,
+        .directory-row.active .directory-meta { color: var(--sidebar-accent-strong); }
+        .directory-children { margin-left: 0; }
+        .file-row { justify-content: space-between; padding: 8px 8px; border: 1px solid transparent; }
+        .file-row.active { border-color: rgba(38,103,168,0.2); }
+        .file-row-main { flex: 1; min-width: 0; }
+        .file-row-title { font-size: 12px; font-weight: 600; color: var(--sidebar-text); line-height: 1.45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .file-row-meta { margin-top: 3px; font-size: 11px; color: var(--sidebar-muted); line-height: 1.4; }
+        .file-row.active .file-row-title,
+        .file-row.active .file-row-meta { color: var(--sidebar-accent-strong); }
+        .file-row-delete { opacity: 0; transition: opacity 0.16s ease; padding: 2px 4px; border: none; background: transparent; color: #b54848; font-size: 11px; cursor: pointer; }
+        .file-row:hover .file-row-delete,
+        .file-row.active .file-row-delete { opacity: 1; }
+        .file-row-delete:hover { color: #c0392b; }
+        .sidebar-empty { padding: 8px 6px; font-size: 11px; color: var(--sidebar-muted); line-height: 1.6; }
+        .sidebar.collapsed { width: 56px; }
+        .sidebar.collapsed .sidebar-title-group,
+        .sidebar.collapsed .tree-actions,
+        .sidebar.collapsed .sidebar-body { display: none; }
+        .sidebar.collapsed .sidebar-header { justify-content: center; padding: 12px 8px; }
+        .sidebar-toggle-btn { width: 30px; height: 30px; padding: 0; border-radius: 8px; background: rgba(255,255,255,0.92); border: 1px solid rgba(207,216,227,0.95); color: var(--sidebar-text); box-shadow: none; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+        .sidebar-toggle-btn svg { width: 16px; height: 16px; transition: transform 0.18s ease, color 0.18s ease; }
+        .sidebar-toggle-btn:hover { background: #fff; border-color: rgba(38,103,168,0.26); color: var(--sidebar-accent-strong); }
+        .sidebar.collapsed .sidebar-toggle-btn svg { transform: rotate(180deg); }
+        .hidden { display: none !important; }
+        .status-badge-svg text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+        .modal-note { font-size: 13px; color: #666; line-height: 1.6; margin-top: 8px; }
+        .modal-field { margin-top: 10px; }
 
         /* Modal */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 200; display: flex; align-items: center; justify-content: center; }
@@ -55,10 +130,9 @@
         .modal textarea { resize: vertical; min-height: 50px; }
         .modal .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
         .modal .required::after { content: '*'; color: #e74c3c; }
-
-        /* Filter bar */
-        .filter-bar { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid #eee; }
-        .filter-bar input, .filter-bar select { flex: 1; padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; min-width: 0; }
+        .template-help { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+        .template-help code { padding: 4px 8px; border-radius: 999px; background: #f3f6f9; color: #174b79; font-size: 12px; }
+        #prompt-template-input { min-height: 300px; font-family: Consolas, "SFMono-Regular", monospace; line-height: 1.6; }
 
         /* Content */
         .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -155,27 +229,64 @@
 <div class="header">
     <h1>XMind 思维导图查看器</h1>
     <div class="header-actions">
+        <button class="btn btn-outline" onclick="toggleSidebar()" id="btn-sidebar">目录</button>
         <label class="btn btn-primary" for="file-input">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            上传 XMind
+            导入 XMind
         </label>
-        <input type="file" id="file-input" accept=".xmind" style="display:none" onchange="handleUpload(this.files[0])">
+        <input type="file" id="file-input" accept=".xmind" multiple style="display:none" onchange="handleUpload(this.files)">
+        <button class="btn btn-outline hidden" onclick="downloadCurrentFile()" id="btn-download">下载源文件</button>
+        <button class="btn btn-outline" onclick="openPromptTemplateModal()">Prompt 模板</button>
         <button class="btn btn-outline" onclick="toggleModulePanel()" id="btn-module">模块用例</button>
     </div>
 </div>
 
 <div class="main">
     <!-- Sidebar: file list -->
-    <div class="sidebar">
+    <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <span>文件列表</span>
-            <span id="file-count" style="font-size:12px;color:#999;font-weight:400"></span>
+            <div class="sidebar-title-group">
+                <div class="sidebar-kicker">XMind Library</div>
+                <div class="sidebar-label-row">
+                    <span class="sidebar-label">资源目录</span>
+                    <span class="sidebar-count" id="file-count">0 个文件</span>
+                </div>
+            </div>
+            <button class="sidebar-toggle-btn" id="sidebar-toggle-btn" onclick="toggleSidebar()" aria-label="收起侧栏" type="button">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M6 4.5v11"></path>
+                    <path d="M13 6.5 9.5 10 13 13.5"></path>
+                </svg>
+            </button>
         </div>
-        <div class="filter-bar">
-            <input type="text" id="filter-search" placeholder="搜索标题/项目" oninput="renderFileList()">
-            <select id="filter-project" onchange="renderFileList()"><option value="">全部项目</option></select>
+        <div class="tree-actions">
+            <button class="btn btn-sm btn-outline" onclick="openCreateFolderModal()">新建目录</button>
+            <button class="btn btn-sm btn-outline" onclick="importIntoCurrentFolder()">导入</button>
+            <button class="btn btn-sm btn-outline" onclick="openRenameFolderModal()">改名</button>
+            <button class="btn btn-sm btn-outline" onclick="openMoveFolderModal()">移动</button>
+            <button class="btn btn-sm btn-danger" onclick="confirmDeleteFolder()">删目录</button>
         </div>
-        <div class="file-list" id="file-list"></div>
+        <div class="sidebar-body" id="sidebar-body">
+            <div class="sidebar-path-card">
+                <div class="sidebar-current-label">当前目录</div>
+                <div class="sidebar-current-path" id="sidebar-current-path">资料库</div>
+            </div>
+            <div class="sidebar-block">
+                <div class="sidebar-block-head">
+                    <span class="sidebar-block-title">目录</span>
+                    <span class="sidebar-block-meta" id="folder-count">0 个目录</span>
+                </div>
+                <div class="directory-tree" id="directory-tree"></div>
+            </div>
+            <div class="sidebar-block">
+                <div class="sidebar-block-head">
+                    <span class="sidebar-block-title">文件</span>
+                    <span class="sidebar-block-meta" id="current-folder-file-count">0 个文件</span>
+                </div>
+                <div class="sidebar-block-caption" id="file-block-caption">资料库</div>
+                <div class="current-file-list" id="current-file-list"></div>
+            </div>
+        </div>
     </div>
 
     <!-- Main content -->
@@ -183,11 +294,11 @@
         <div class="upload-area" id="upload-area"
              ondragover="event.preventDefault(); this.classList.add('drag-over')"
              ondragleave="this.classList.remove('drag-over')"
-             ondrop="event.preventDefault(); this.classList.remove('drag-over'); handleUpload(event.dataTransfer.files[0])"
+             ondrop="event.preventDefault(); this.classList.remove('drag-over'); handleUpload(event.dataTransfer.files)"
              onclick="document.getElementById('file-input').click()">
-            <div class="upload-icon">📁</div>
-            <div class="upload-text">拖拽 XMind 文件到此处，或点击上传</div>
-            <div class="upload-hint">支持 .xmind 格式</div>
+            <div class="upload-icon">导入</div>
+            <div class="upload-text" id="upload-text">拖拽 XMind 文件到此处，或点击导入到当前目录</div>
+            <div class="upload-hint" id="upload-hint">支持多文件同时导入，源文件会保存在系统目录中</div>
         </div>
 
         <div class="sheet-tabs" id="sheet-tabs"></div>
@@ -196,25 +307,31 @@
                 <button class="btn btn-sm" onclick="fitMap()" title="适应窗口">适应</button>
                 <button class="btn btn-sm" onclick="expandAll()" title="全部展开">展开</button>
                 <button class="btn btn-sm" onclick="collapseAll()" title="折叠到二级">折叠</button>
+                <button class="btn btn-sm hidden" onclick="downloadCurrentFile()" id="btn-download-inline" title="下载源文件">下载源文件</button>
                 <button class="btn btn-sm" onclick="toggleComments()" id="btn-comments" title="显示/隐藏评论">评论</button>
             </div>
             <svg id="markmap" style="width:100%;height:100%"></svg>
             <!-- Click popup menu -->
             <div class="node-popup" id="node-popup">
-                <button onclick="popupAction('edit')">✏️ 编辑节点</button>
-                <button onclick="popupAction('add-child')">➕ 新增子节点</button>
-                <button onclick="popupAction('expand-children')">📂 展开子节点</button>
-                <button onclick="popupAction('expand-descendants')">🌲 展开全部后代</button>
+                <button onclick="popupAction('edit')">编辑节点</button>
+                <button onclick="popupAction('add-child')">新增子节点</button>
+                <button onclick="popupAction('expand-children')">展开子节点</button>
+                <button onclick="popupAction('expand-descendants')">展开全部后代</button>
                 <hr>
-                <button onclick="popupAction('md')">🔗 复制链接 (.md)</button>
-                <button onclick="popupAction('prompt')">🤖 复制 Prompt</button>
+                <button onclick="popupAction('mark-self-test')">◎ 标记自测</button>
+                <button onclick="popupAction('mark-test')">◆ 标记测试</button>
+                <button onclick="popupAction('clear-status')">清除标记</button>
                 <hr>
-                <button class="popup-comment" onclick="popupAction('comment')">💬 添加评论</button>
+                <button onclick="popupAction('md')">复制链接 (.md)</button>
+                <button onclick="popupAction('prompt')">复制 Prompt</button>
+                <button onclick="openPromptTemplateModal()">配置 Prompt 模板</button>
+                <hr>
+                <button class="popup-comment" onclick="popupAction('comment')">添加评论</button>
             </div>
         </div>
 
         <div class="empty-state" id="empty-state" style="display:none">
-            <div class="empty-state-icon">🗺️</div>
+            <div class="empty-state-icon">XMind</div>
             <div class="empty-state-text">选择左侧文件查看思维导图</div>
         </div>
     </div>
@@ -247,25 +364,23 @@
     <div class="comments-panel-body" id="comments-panel-body"></div>
 </div>
 
-<!-- Upload Modal -->
-<div class="modal-overlay" id="upload-modal" style="display:none">
+<!-- Folder Modal -->
+<div class="modal-overlay" id="folder-modal" style="display:none">
     <div class="modal" onclick="event.stopPropagation()">
-        <button class="modal-close" type="button" onclick="closeUploadModal()" aria-label="关闭">&times;</button>
-        <h3>上传 XMind 文件</h3>
-        <input type="hidden" id="modal-file-data">
-        <label class="required">姓名</label>
-        <input type="text" id="modal-uploader" placeholder="请输入您的姓名" required>
-        <label class="required">密码</label>
-        <input type="password" id="modal-password" placeholder="删除时需要验证此密码" required>
-        <label>项目名称</label>
-        <input type="text" id="modal-project" placeholder="可选，如： XX管理系统">
-        <label>版本号</label>
-        <input type="text" id="modal-version" placeholder="可选，如: v1.0.0">
-        <label>备注</label>
-        <textarea id="modal-remark" placeholder="可选" rows="2"></textarea>
+        <button class="modal-close" type="button" onclick="closeFolderModal()" aria-label="关闭">&times;</button>
+        <h3 id="folder-modal-title">目录操作</h3>
+        <div class="modal-field">
+            <label id="folder-modal-name-label">目录名称</label>
+            <input type="text" id="folder-modal-name" placeholder="请输入目录名称">
+        </div>
+        <div class="modal-field" id="folder-modal-target-wrap" style="display:none">
+            <label>目标目录</label>
+            <select id="folder-modal-target"></select>
+        </div>
+        <p class="modal-note" id="folder-modal-note"></p>
         <div class="modal-actions">
-            <button class="btn btn-outline" onclick="closeUploadModal()">取消</button>
-            <button class="btn btn-primary" onclick="submitUpload()">确认上传</button>
+            <button class="btn btn-outline" onclick="closeFolderModal()">取消</button>
+            <button class="btn btn-primary" onclick="submitFolderModal()" id="folder-modal-confirm">确定</button>
         </div>
     </div>
 </div>
@@ -274,13 +389,40 @@
 <div class="modal-overlay" id="delete-modal" style="display:none">
     <div class="modal" onclick="event.stopPropagation()">
         <button class="modal-close" type="button" onclick="closeDeleteModal()" aria-label="关闭">&times;</button>
-        <h3>确认删除</h3>
+        <h3 id="delete-modal-title">确认删除</h3>
         <p id="delete-file-name" style="font-size:13px;color:#666;margin:8px 0 16px"></p>
-        <label class="required">输入密码</label>
-        <input type="password" id="delete-password" placeholder="请输入上传时设置的密码">
         <div class="modal-actions">
             <button class="btn btn-outline" onclick="closeDeleteModal()">取消</button>
             <button class="btn btn-danger" onclick="confirmDelete()">确认删除</button>
+        </div>
+    </div>
+</div>
+
+<!-- Prompt Template Modal -->
+<div class="modal-overlay" id="prompt-template-modal" style="display:none">
+    <div class="modal" onclick="event.stopPropagation()" style="width:680px;max-width:94vw">
+        <button class="modal-close" type="button" onclick="closePromptTemplateModal()" aria-label="关闭">&times;</button>
+        <h3>Prompt 模板配置</h3>
+        <div class="modal-field">
+            <label for="prompt-template-input">模板内容</label>
+            <textarea id="prompt-template-input" placeholder="请输入 Prompt 模板，支持双花括号变量，例如 &#123;&#123;module_title&#125;&#125;"></textarea>
+        </div>
+        <p class="modal-note">点击节点后，“复制 Prompt”会按当前模板自动替换变量并生成内容。</p>
+        <div class="template-help">
+            <code>&#123;&#123;file_title&#125;&#125;</code>
+            <code>&#123;&#123;file_name&#125;&#125;</code>
+            <code>&#123;&#123;sheet_name&#125;&#125;</code>
+            <code>&#123;&#123;module_title&#125;&#125;</code>
+            <code>&#123;&#123;topic_title&#125;&#125;</code>
+            <code>&#123;&#123;topic_path&#125;&#125;</code>
+            <code>&#123;&#123;case_count&#125;&#125;</code>
+            <code>&#123;&#123;cases_markdown&#125;&#125;</code>
+            <code>&#123;&#123;cases_plain&#125;&#125;</code>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="resetPromptTemplateEditor()">恢复默认</button>
+            <button class="btn btn-outline" onclick="closePromptTemplateModal()">取消</button>
+            <button class="btn btn-primary" onclick="savePromptTemplate()">保存</button>
         </div>
     </div>
 </div>
@@ -294,16 +436,70 @@ let selectFileRequestToken = 0;
 let markmapInstance = null;
 let markmapRenderVersion = 0;
 let filesCache = [];
+let libraryCache = { folders: [], files: [], folder_count: 0, file_count: 0 };
 let serverInfo = { ip: '127.0.0.1', port: 8000 };
 let topicsCache = [];
 let commentsCache = {};   // topic_id -> [comment]
 let commentsVisible = false;
 let popupTopicId = null;
 let popupPath = null;
+let selectedFolderId = null;
+let currentFileFolderId = null;
+let expandedFolderIds = new Set(['root']);
+let sidebarCollapsed = false;
+let folderModalMode = null;
+let deleteMode = 'file';
+let deleteTargetId = null;
+const PROMPT_TEMPLATE_STORAGE_KEY = 'xmind_prompt_template';
+function promptTemplateVar(key) {
+    return ['{', '{', key, '}', '}'].join('');
+}
+const DEFAULT_PROMPT_TEMPLATE = [
+    `这是 ${promptTemplateVar('module_title')} 的完整测试用例，请严格根据测试用例内容，对现有代码进行逐条静态测试。`,
+    '不要直接跳到结论，先完成任务拆分、文档创建、子代理分配，再逐步执行。',
+    '',
+    '## 任务目标',
+    `- 对 ${promptTemplateVar('module_title')} 相关代码做静态测试，不要求运行程序。`,
+    '- 逐条核对测试用例，确认代码是否覆盖、覆盖是否完整、是否存在逻辑漏洞或遗漏场景。',
+    '- 重点通过子代理分工执行不同测试子任务，由主代理统一汇总结果。',
+    '',
+    '## 任务信息',
+    `- 项目: ${promptTemplateVar('file_title')}`,
+    `- 文件名: ${promptTemplateVar('file_name')}`,
+    `- Sheet: ${promptTemplateVar('sheet_name')}`,
+    `- 模块: ${promptTemplateVar('module_title')}`,
+    `- 路径: ${promptTemplateVar('topic_path')}`,
+    `- 用例数: ${promptTemplateVar('case_count')}`,
+    '',
+    '## 强制执行要求',
+    '1. 开始分析前，先创建一个用于输出结果的文档，文档中至少包含：任务概览、子任务拆分、执行进度、逐条用例结果、问题汇总、最终结论。',
+    '2. 先整体阅读测试用例，再把整个测试任务拆分成大小合适的子任务。拆分时优先按业务链路、代码模块、风险复杂度或用例分组来划分。',
+    '3. 根据子任务复杂程度创建子代理执行。简单任务可以适当合并，复杂任务必须单独分配子代理，并明确每个子代理负责的用例范围与代码范围。',
+    '4. 主代理负责调度、跟踪和汇总；子代理负责逐条检查其负责的测试用例，并返回静态测试结论与证据。',
+    '5. 每完成一个子任务，就立刻把当前进度、已覆盖用例、发现的问题、风险说明、关键代码位置写入结果文档，不要等所有任务完成后再统一补写。',
+    '6. 如果某个用例无法确认是否覆盖，要明确写出阻塞原因、缺失信息和需要进一步确认的位置。',
+    '',
+    '## 测试用例',
+    promptTemplateVar('cases_markdown'),
+    '',
+    '## 子代理执行要求',
+    '1. 每个子代理都必须基于分配到的测试用例逐条检查代码，不允许只做概括性结论。',
+    '2. 每个子代理输出时至少包含：用例标题、是否覆盖、覆盖代码位置、判断依据、潜在漏洞、遗漏风险、建议动作。',
+    '3. 如果一个子代理发现跨模块问题，需要在结果中标记关联模块，并提醒主代理在汇总时合并处理。',
+    '',
+    '## 最终输出要求',
+    '1. 汇总所有子代理结果，给出完整测试结论。',
+    '2. 对每条测试用例标明：已覆盖 / 部分覆盖 / 未覆盖 / 无法确认。',
+    '3. 对于已覆盖的用例，标注关键代码位置或关键实现点。',
+    '4. 对于未覆盖或部分覆盖的用例，说明风险、影响范围和建议修复方向。',
+    '5. 给出整体覆盖率判断、主要风险点、优先级最高的问题清单。',
+    '6. 最终回复中要明确说明结果文档路径，以及文档中已经记录了哪些阶段性进度。',
+].join('\n');
 
 // ==================== Init ====================
 document.addEventListener('DOMContentLoaded', async () => {
     try { const res = await fetch('/api/server-info'); serverInfo = await res.json(); } catch(e) {}
+    syncSidebarState();
     loadFiles();
 });
 
@@ -343,129 +539,586 @@ function getAuthorName() {
     return name;
 }
 
+function getStoredPromptTemplate() {
+    return localStorage.getItem(PROMPT_TEMPLATE_STORAGE_KEY) || '';
+}
+
+function getPromptTemplate() {
+    return getStoredPromptTemplate().trim() || DEFAULT_PROMPT_TEMPLATE;
+}
+
+function openPromptTemplateModal() {
+    const input = document.getElementById('prompt-template-input');
+    if (input) input.value = getPromptTemplate();
+    document.getElementById('node-popup').style.display = 'none';
+    document.getElementById('prompt-template-modal').style.display = 'flex';
+    if (input) input.focus();
+}
+
+function closePromptTemplateModal() {
+    document.getElementById('prompt-template-modal').style.display = 'none';
+}
+
+function resetPromptTemplateEditor() {
+    const input = document.getElementById('prompt-template-input');
+    if (input) input.value = DEFAULT_PROMPT_TEMPLATE;
+}
+
+function savePromptTemplate() {
+    const input = document.getElementById('prompt-template-input');
+    const value = (input?.value || '').trim();
+    if (!value) {
+        showToast('模板不能为空', 'error');
+        return;
+    }
+    localStorage.setItem(PROMPT_TEMPLATE_STORAGE_KEY, value);
+    closePromptTemplateModal();
+    showToast('Prompt 模板已保存');
+}
+
+function buildPromptCaseLines(cases, format = 'markdown') {
+    const list = Array.isArray(cases) && cases.length ? cases : [];
+    if (!list.length) return format === 'markdown' ? '- 当前节点下暂无子用例' : '当前节点下暂无子用例';
+    return list.map(item => {
+        const depth = Math.max(0, Number(item.depth || 0));
+        const indent = '  '.repeat(depth);
+        return format === 'markdown'
+            ? `${indent}- ${item.title}`
+            : `${indent}${item.title}`;
+    }).join('\n');
+}
+
+function normalizePromptCases(caseData) {
+    if (Array.isArray(caseData?.cases) && caseData.cases.length) return caseData.cases;
+    return [{
+        title: caseData?.module || '当前节点',
+        depth: 0,
+        path: caseData?.path || popupPath || '',
+    }];
+}
+
+function buildPromptTemplateContext(fileId, path, caseData) {
+    const fileData = filesCache.find(item => item.id === fileId) || {};
+    const currentSheetStat = currentSheetStats.find(item => item.index === currentSheetIndex);
+    const sheetName = currentSheetStat?.name || currentSheetNames[currentSheetIndex] || fileData.root_title || '';
+    const normalizedCases = normalizePromptCases(caseData);
+    const caseCount = Number(caseData?.case_count || 0) > 0 ? Number(caseData.case_count) : normalizedCases.length;
+    const moduleTitle = caseData?.module || getTopicTitleById(popupTopicId) || '当前节点';
+    return {
+        file_title: fileData.root_title || '',
+        file_name: fileData.filename || '',
+        sheet_name: sheetName,
+        module_title: moduleTitle,
+        topic_title: moduleTitle,
+        topic_path: caseData?.path || path || '',
+        case_count: String(caseCount),
+        cases_markdown: buildPromptCaseLines(normalizedCases, 'markdown'),
+        cases_plain: buildPromptCaseLines(normalizedCases, 'plain'),
+    };
+}
+
+function applyPromptTemplate(template, context) {
+    return String(template || '').replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, key) => {
+        return Object.prototype.hasOwnProperty.call(context, key) ? String(context[key] ?? '') : match;
+    }).trim();
+}
+
+async function buildPromptText(fileId, path) {
+    const res = await fetch(`/api/cases/${fileId}/${encodeURIComponent(path)}?sheet=${currentSheetIndex}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '加载 Prompt 数据失败');
+    const context = buildPromptTemplateContext(fileId, path, data);
+    return applyPromptTemplate(getPromptTemplate(), context);
+}
+
+async function copyPromptForPath(path) {
+    if (!currentFileId || !path) return;
+    try {
+        const text = await buildPromptText(currentFileId, path);
+        await copyToClipboard(text);
+        showToast('已按模板复制 Prompt');
+    } catch (e) {
+        showToast(e.message || '生成 Prompt 失败', 'error');
+    }
+}
+
 // ==================== File Operations ====================
-let pendingUploadFile = null;
+function syncSidebarState() {
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar) sidebar.classList.toggle('collapsed', sidebarCollapsed);
+    const btn = document.getElementById('sidebar-toggle-btn');
+    if (btn) btn.setAttribute('aria-label', sidebarCollapsed ? '展开侧栏' : '收起侧栏');
+}
+
+function toggleSidebar() {
+    sidebarCollapsed = !sidebarCollapsed;
+    syncSidebarState();
+}
+
+function walkFolders(folders, visitor, path = []) {
+    for (const folder of folders || []) {
+        const nextPath = [...path, folder];
+        if (visitor(folder, nextPath) === false) return false;
+        if (walkFolders(folder.children || [], visitor, nextPath) === false) return false;
+    }
+    return true;
+}
+
+function findFolderById(folderId) {
+    if (folderId == null) return null;
+    let found = null;
+    walkFolders(libraryCache.folders, folder => {
+        if (folder.id === folderId) { found = folder; return false; }
+        return true;
+    });
+    return found;
+}
+
+function findFileById(fileId) {
+    const rootFile = (libraryCache.files || []).find(f => f.id === fileId);
+    if (rootFile) return rootFile;
+    let found = null;
+    walkFolders(libraryCache.folders, folder => {
+        const file = (folder.files || []).find(f => f.id === fileId);
+        if (file) { found = file; return false; }
+        return true;
+    });
+    return found;
+}
+
+function flattenFilesFromTree() {
+    const list = [];
+    for (const file of (libraryCache.files || [])) list.push(file);
+    walkFolders(libraryCache.folders, folder => {
+        for (const file of (folder.files || [])) list.push(file);
+        return true;
+    });
+    return list;
+}
+
+function getFolderPath(folderId) {
+    if (folderId == null) return ['资料库'];
+    let names = ['资料库'];
+    walkFolders(libraryCache.folders, (folder, path) => {
+        if (folder.id === folderId) {
+            names = ['资料库', ...path.map(x => x.name)];
+            return false;
+        }
+        return true;
+    });
+    return names;
+}
+
+function getFolderPathIds(folderId) {
+    if (folderId == null) return [];
+    let ids = [];
+    walkFolders(libraryCache.folders, (folder, path) => {
+        if (folder.id === folderId) {
+            ids = path.map(x => x.id);
+            return false;
+        }
+        return true;
+    });
+    return ids;
+}
+
+function ensureFolderExpanded(folderId) {
+    expandedFolderIds.add('root');
+    for (const id of getFolderPathIds(folderId)) expandedFolderIds.add(id);
+}
+
+function getCurrentFolderId() {
+    return currentFileId ? currentFileFolderId : selectedFolderId;
+}
+
+function getCurrentFolderName() {
+    const folderId = getCurrentFolderId();
+    return folderId == null ? '资料库' : (findFolderById(folderId)?.name || '资料库');
+}
+
+function updateUploadHint() {
+    const path = getFolderPath(getCurrentFolderId()).join(' / ');
+    document.getElementById('upload-text').textContent = `拖拽 XMind 文件到此处，或点击导入到 ${getCurrentFolderName()}`;
+    document.getElementById('upload-hint').textContent = `当前导入位置：${path} · 支持多文件同时导入，源文件会保存在系统目录中`;
+}
+
+function updateDownloadButtons() {
+    const hasFile = !!currentFileId;
+    document.getElementById('btn-download').classList.toggle('hidden', !hasFile);
+    document.getElementById('btn-download-inline').classList.toggle('hidden', !hasFile);
+}
 
 async function loadFiles() {
-    const res = await fetch('/api/files');
-    filesCache = await res.json();
-    updateProjectFilter();
+    const res = await fetch('/api/tree');
+    libraryCache = await res.json();
+    filesCache = flattenFilesFromTree();
+
+    if (currentFileId && !findFileById(currentFileId)) {
+        currentFileId = null;
+        currentFileFolderId = null;
+        resetView();
+    }
+    if (selectedFolderId != null && !findFolderById(selectedFolderId)) {
+        selectedFolderId = null;
+    }
+    if (currentFileId) {
+        const currentFile = findFileById(currentFileId);
+        currentFileFolderId = currentFile ? (currentFile.folder_id ?? null) : null;
+        ensureFolderExpanded(currentFileFolderId);
+    } else {
+        ensureFolderExpanded(selectedFolderId);
+    }
+
+    updateUploadHint();
+    updateDownloadButtons();
     renderFileList();
 }
 
-function updateProjectFilter() {
-    const sel = document.getElementById('filter-project');
-    const current = sel.value;
-    const projects = [...new Set(filesCache.map(f => f.project).filter(Boolean))];
-    sel.innerHTML = '<option value="">全部项目</option>' +
-        projects.map(p => `<option value="${p}">${p}</option>`).join('');
-    if (projects.includes(current)) sel.value = current;
+function updateProjectFilter() {}
+
+function countFilesInBranch(folder) {
+    let total = (folder.files || []).length;
+    for (const child of (folder.children || [])) total += countFilesInBranch(child);
+    return total;
 }
 
-function renderFileList() {
-    const el = document.getElementById('file-list');
-    const count = document.getElementById('file-count');
-    const search = document.getElementById('filter-search').value.trim().toLowerCase();
-    const project = document.getElementById('filter-project').value;
+function getFilesForFolder(folderId) {
+    if (folderId == null) return libraryCache.files || [];
+    return findFolderById(folderId)?.files || [];
+}
 
-    let filtered = filesCache;
-    if (search) filtered = filtered.filter(f => (f.root_title + ' ' + f.project + ' ' + f.uploader).toLowerCase().includes(search));
-    if (project) filtered = filtered.filter(f => f.project === project);
+function getBaseFileName(fileName) {
+    return String(fileName || '').split(/[\\/]/).pop() || '';
+}
 
-    count.textContent = filtered.length ? `(${filtered.length})` : '';
-    if (!filtered.length) { el.innerHTML = '<div style="padding:20px;text-align:center;color:#bbb;font-size:13px">暂无文件</div>'; return; }
-    el.innerHTML = filtered.map(f => {
-        const tags = [];
-        if (f.project) tags.push(`<span style="background:#e8f0fe;color:#4a90d9;padding:1px 6px;border-radius:4px;font-size:11px">${f.project}</span>`);
-        if (f.version) tags.push(`<span style="background:#fef3e0;color:#e67e22;padding:1px 6px;border-radius:4px;font-size:11px">${f.version}</span>`);
-        const totalTopicCount = Number(f.total_topic_count || 0);
-        return `
-        <div class="file-item ${f.id === currentFileId ? 'active' : ''}" onclick="selectFile(${f.id})">
-            <div class="file-info">
-                <div class="file-name" title="${escapeHtml(f.filename || '')}">
-                    <span class="file-name-text">📄 ${escapeHtml(f.root_title || '')}</span>
-                    <span class="file-topic-count">${totalTopicCount}</span>
+function renderFolderTree(folders, depth = 0) {
+    let html = '';
+    for (const folder of (folders || [])) {
+        const expanded = expandedFolderIds.has(folder.id);
+        const hasChildren = (folder.children?.length || 0) > 0;
+        const active = !currentFileId && selectedFolderId === folder.id;
+        const fileCount = Number(folder.total_file_count ?? countFilesInBranch(folder));
+        html += `
+            <div class="directory-node ${expanded ? 'expanded' : ''}">
+                <div class="directory-row ${active ? 'active' : ''}" style="--dir-depth:${depth}" onclick="selectFolder(${folder.id})">
+                    <button class="tree-toggle ${hasChildren ? '' : 'ghost'}" type="button" onclick="toggleFolderExpand(${folder.id}, event)">
+                        <span class="tree-toggle-icon">▸</span>
+                    </button>
+                    <div class="directory-main">
+                        <span class="directory-name" title="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</span>
+                        <span class="directory-meta">${fileCount} 文件</span>
+                    </div>
                 </div>
-                <div class="file-meta">${f.uploader || '匿名'} · ${f.upload_time}${tags.length ? ' ' + tags.join(' ') : ''}</div>
+                ${expanded ? `<div class="directory-children">${renderFolderTree(folder.children || [], depth + 1)}</div>` : ''}
             </div>
-            <button class="btn btn-sm btn-danger file-delete" onclick="event.stopPropagation(); showDeleteModal(${f.id}, '${(f.root_title || '').replace(/'/g, "\\'")}')">删除</button>
-        </div>`;
+        `;
+    }
+    return html;
+}
+
+function renderCurrentFolderFiles(files) {
+    return (files || []).map(file => {
+        const fileTitle = getBaseFileName(file.filename) || file.root_title || '';
+        const totalTopicCount = Number(file.topic_count || file.total_topic_count || 0);
+        const meta = [file.upload_time || '', totalTopicCount ? `${totalTopicCount} 节点` : ''].filter(Boolean).join(' · ');
+        return `
+            <div class="file-row ${file.id === currentFileId ? 'active' : ''}" onclick="selectFile(${file.id})">
+                <div class="file-row-main">
+                    <div class="file-row-title" title="${escapeHtml(getBaseFileName(file.filename) || file.filename || '')}">${escapeHtml(fileTitle)}</div>
+                    <div class="file-row-meta">${escapeHtml(meta || 'XMind 文件')}</div>
+                </div>
+                <button class="file-row-delete" type="button" onclick="event.stopPropagation(); showDeleteModal(${file.id}, '${fileTitle.replace(/'/g, "\\'")}', 'file')">删</button>
+            </div>
+        `;
     }).join('');
 }
 
-function handleUpload(file) {
-    if (!file) return;
-    if (!file.name.endsWith('.xmind')) { showToast('请上传 .xmind 文件', 'error'); return; }
-    pendingUploadFile = file;
-    document.getElementById('modal-uploader').value = localStorage.getItem('xmind_author') || '';
-    document.getElementById('modal-password').value = '';
-    document.getElementById('modal-project').value = '';
-    document.getElementById('modal-version').value = '';
-    document.getElementById('modal-remark').value = '';
-    document.getElementById('upload-modal').style.display = 'flex';
+function renderFileList() {
+    const countEl = document.getElementById('file-count');
+    const folderCountEl = document.getElementById('folder-count');
+    const pathEl = document.getElementById('sidebar-current-path');
+    const directoryTreeEl = document.getElementById('directory-tree');
+    const currentFileListEl = document.getElementById('current-file-list');
+    const currentFolderFileCountEl = document.getElementById('current-folder-file-count');
+    const fileBlockCaptionEl = document.getElementById('file-block-caption');
+
+    const currentFolderId = getCurrentFolderId();
+    const currentFiles = getFilesForFolder(currentFolderId);
+    const rootActive = !currentFileId && selectedFolderId == null;
+    const rootExpanded = expandedFolderIds.has('root');
+    const hasFolders = (libraryCache.folders || []).length > 0;
+    const hasAnyFiles = Number(libraryCache.file_count || 0) > 0;
+
+    if (countEl) countEl.textContent = `${Number(libraryCache.file_count || 0)} 个文件`;
+    if (folderCountEl) folderCountEl.textContent = `${Number(libraryCache.folder_count || 0)} 个目录`;
+    if (pathEl) pathEl.textContent = getFolderPath(currentFolderId).join(' / ');
+    if (currentFolderFileCountEl) currentFolderFileCountEl.textContent = `${currentFiles.length} 个文件`;
+    if (fileBlockCaptionEl) fileBlockCaptionEl.textContent = getCurrentFolderName();
+
+    if (directoryTreeEl) {
+        directoryTreeEl.innerHTML = `
+            <div class="directory-node ${rootExpanded ? 'expanded' : ''}">
+                <div class="directory-row ${rootActive ? 'active' : ''}" style="--dir-depth:0" onclick="selectFolder(null)">
+                    <button class="tree-toggle ${hasFolders ? '' : 'ghost'}" type="button" onclick="toggleFolderExpand('root', event)">
+                        <span class="tree-toggle-icon">▸</span>
+                    </button>
+                    <div class="directory-main">
+                        <span class="directory-name">资料库</span>
+                        <span class="directory-meta">${Number(libraryCache.file_count || 0)} 文件</span>
+                    </div>
+                </div>
+                ${rootExpanded ? `<div class="directory-children">${renderFolderTree(libraryCache.folders || [], 1)}</div>` : ''}
+            </div>
+            ${!hasFolders && !hasAnyFiles ? `<div class="sidebar-empty">还没有目录或文件。</div>` : ''}
+        `;
+    }
+
+    if (currentFileListEl) {
+        currentFileListEl.innerHTML = currentFiles.length
+            ? renderCurrentFolderFiles(currentFiles)
+            : `<div class="sidebar-empty">当前目录下还没有文件。</div>`;
+    }
 }
 
-function closeUploadModal() {
-    document.getElementById('upload-modal').style.display = 'none';
-    pendingUploadFile = null;
-    document.getElementById('file-input').value = '';
+function toggleFolderExpand(folderId, event) {
+    event.stopPropagation();
+    if (expandedFolderIds.has(folderId)) expandedFolderIds.delete(folderId);
+    else expandedFolderIds.add(folderId);
+    renderFileList();
 }
 
-async function submitUpload() {
-    const uploader = document.getElementById('modal-uploader').value.trim();
-    const password = document.getElementById('modal-password').value;
-    const project = document.getElementById('modal-project').value.trim();
-    const version = document.getElementById('modal-version').value.trim();
-    const remark = document.getElementById('modal-remark').value.trim();
+function selectFolder(folderId) {
+    selectedFolderId = folderId;
+    currentFileId = null;
+    currentFileFolderId = null;
+    ensureFolderExpanded(folderId);
+    resetView();
+    updateUploadHint();
+    updateDownloadButtons();
+    renderFileList();
+}
 
-    if (!uploader) { showToast('请输入姓名', 'error'); return; }
-    if (!password) { showToast('请输入密码', 'error'); return; }
+function importIntoCurrentFolder() {
+    document.getElementById('file-input').click();
+}
+
+async function handleUpload(fileInput) {
+    const files = Array.from(fileInput || []).filter(Boolean);
+    if (!files.length) return;
+    if (files.some(file => !file.name.endsWith('.xmind'))) {
+        showToast('请只上传 .xmind 文件', 'error');
+        document.getElementById('file-input').value = '';
+        return;
+    }
 
     const form = new FormData();
-    form.append('file', pendingUploadFile);
-    form.append('uploader', uploader);
-    form.append('password', password);
-    form.append('project', project);
-    form.append('version', version);
-    form.append('remark', remark);
+    for (const file of files) form.append('files', file);
+    const folderId = getCurrentFolderId();
+    if (folderId != null) form.append('folder_id', folderId);
 
     try {
-        const res = await fetch('/api/upload', { method: 'POST', body: form });
-        if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+        const res = await fetch('/api/import', { method: 'POST', body: form });
         const data = await res.json();
-        localStorage.setItem('xmind_author', uploader);
-        showToast(`上传成功: ${data.root_title} (${data.topic_count} 个节点)`);
-        closeUploadModal();
-        await loadFiles(); selectFile(data.id);
-    } catch (e) { showToast(e.message, 'error'); }
+        if (!res.ok) throw new Error(data.detail || '导入失败');
+        const importedCount = (data.imported || []).length;
+        const failedCount = (data.failed || []).length;
+        await loadFiles();
+        if (importedCount > 0) {
+            const firstFile = data.imported[0];
+            await selectFile(firstFile.id);
+        }
+        if (importedCount > 0 && failedCount === 0) showToast(`导入成功，共 ${importedCount} 个文件`);
+        else if (importedCount > 0) showToast(`导入完成，成功 ${importedCount} 个，失败 ${failedCount} 个`);
+        else showToast((data.failed?.[0]?.error) || '导入失败', 'error');
+    } catch (e) {
+        showToast(e.message, 'error');
+    } finally {
+        document.getElementById('file-input').value = '';
+    }
 }
 
-let deleteFileId = null;
-function showDeleteModal(id, name) {
-    deleteFileId = id;
-    document.getElementById('delete-file-name').textContent = `文件: ${name}`;
-    document.getElementById('delete-password').value = '';
+function openCreateFolderModal() {
+    folderModalMode = 'create';
+    document.getElementById('folder-modal-title').textContent = '新建目录';
+    document.getElementById('folder-modal-name').value = '';
+    document.getElementById('folder-modal-name').disabled = false;
+    document.getElementById('folder-modal-name-label').textContent = '目录名称';
+    document.getElementById('folder-modal-target-wrap').style.display = 'none';
+    document.getElementById('folder-modal-note').textContent = `新目录会创建在：${getFolderPath(getCurrentFolderId()).join(' / ')}`;
+    document.getElementById('folder-modal').style.display = 'flex';
+}
+
+function openRenameFolderModal() {
+    const folderId = getCurrentFolderId();
+    if (folderId == null) { showToast('根目录不支持改名', 'error'); return; }
+    const folder = findFolderById(folderId);
+    if (!folder) { showToast('未找到目录', 'error'); return; }
+    folderModalMode = 'rename';
+    document.getElementById('folder-modal-title').textContent = '重命名目录';
+    document.getElementById('folder-modal-name').value = folder.name || '';
+    document.getElementById('folder-modal-name').disabled = false;
+    document.getElementById('folder-modal-name-label').textContent = '新名称';
+    document.getElementById('folder-modal-target-wrap').style.display = 'none';
+    document.getElementById('folder-modal-note').textContent = `当前目录：${getFolderPath(folderId).join(' / ')}`;
+    document.getElementById('folder-modal').style.display = 'flex';
+}
+
+function collectDescendantFolderIds(folderId) {
+    const ids = new Set();
+    const folder = findFolderById(folderId);
+    if (!folder) return ids;
+    const walk = (item) => {
+        ids.add(item.id);
+        for (const child of (item.children || [])) walk(child);
+    };
+    walk(folder);
+    return ids;
+}
+
+function buildFolderOptions(excludeIds = new Set()) {
+    const options = [`<option value="">资料库</option>`];
+    const walk = (folders, depth = 0) => {
+        for (const folder of folders || []) {
+            if (!excludeIds.has(folder.id)) {
+                options.push(`<option value="${folder.id}">${'　'.repeat(depth)}${escapeHtml(folder.name)}</option>`);
+            }
+            walk(folder.children || [], depth + 1);
+        }
+    };
+    walk(libraryCache.folders || []);
+    return options.join('');
+}
+
+function openMoveFolderModal() {
+    const folderId = getCurrentFolderId();
+    if (folderId == null) { showToast('根目录不能移动', 'error'); return; }
+    const folder = findFolderById(folderId);
+    if (!folder) { showToast('未找到目录', 'error'); return; }
+    folderModalMode = 'move';
+    document.getElementById('folder-modal-title').textContent = '移动目录';
+    document.getElementById('folder-modal-name').value = folder.name || '';
+    document.getElementById('folder-modal-name').disabled = true;
+    document.getElementById('folder-modal-name-label').textContent = '当前目录';
+    document.getElementById('folder-modal-target-wrap').style.display = 'block';
+    document.getElementById('folder-modal-target').innerHTML = buildFolderOptions(collectDescendantFolderIds(folderId));
+    document.getElementById('folder-modal-target').value = folder.parent_id ?? '';
+    document.getElementById('folder-modal-note').textContent = '不能移动到自己或自己的子目录下面。';
+    document.getElementById('folder-modal').style.display = 'flex';
+}
+
+function closeFolderModal() {
+    document.getElementById('folder-modal').style.display = 'none';
+    folderModalMode = null;
+}
+
+async function submitFolderModal() {
+    const folderId = getCurrentFolderId();
+    const name = document.getElementById('folder-modal-name').value.trim();
+    try {
+        if (folderModalMode === 'create') {
+            const res = await fetch('/api/folders', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, parent_id: folderId }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail);
+            selectedFolderId = data.folder_id;
+            ensureFolderExpanded(selectedFolderId);
+            closeFolderModal();
+            await loadFiles();
+            showToast('目录已创建');
+        } else if (folderModalMode === 'rename') {
+            const res = await fetch(`/api/folders/${folderId}/rename`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail);
+            closeFolderModal();
+            await loadFiles();
+            showToast('目录已重命名');
+        } else if (folderModalMode === 'move') {
+            const parentValue = document.getElementById('folder-modal-target').value;
+            const parent_id = parentValue === '' ? null : Number(parentValue);
+            const res = await fetch(`/api/folders/${folderId}/move`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ parent_id }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail);
+            closeFolderModal();
+            await loadFiles();
+            ensureFolderExpanded(folderId);
+            showToast('目录已移动');
+        }
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+function confirmDeleteFolder() {
+    const folderId = getCurrentFolderId();
+    if (folderId == null) { showToast('根目录不能删除', 'error'); return; }
+    const folder = findFolderById(folderId);
+    if (!folder) { showToast('未找到目录', 'error'); return; }
+    deleteMode = 'folder';
+    deleteTargetId = folderId;
+    document.getElementById('delete-modal-title').textContent = '确认删除目录';
+    document.getElementById('delete-file-name').textContent = `目录: ${folder.name}，将递归删除其下所有文件和子目录`;
     document.getElementById('delete-modal').style.display = 'flex';
 }
+
+function showDeleteModal(id, name, mode = 'file') {
+    deleteMode = mode;
+    deleteTargetId = id;
+    document.getElementById('delete-modal-title').textContent = mode === 'folder' ? '确认删除目录' : '确认删除文件';
+    document.getElementById('delete-file-name').textContent = `${mode === 'folder' ? '目录' : '文件'}: ${name}`;
+    document.getElementById('delete-modal').style.display = 'flex';
+}
+
 function closeDeleteModal() {
     document.getElementById('delete-modal').style.display = 'none';
-    deleteFileId = null;
+    deleteTargetId = null;
+    deleteMode = 'file';
 }
+
 async function confirmDelete() {
-    const password = document.getElementById('delete-password').value;
-    if (!password) { showToast('请输入密码', 'error'); return; }
     try {
-        const res = await fetch(`/api/files/${deleteFileId}`, {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password }),
-        });
-        if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
-        if (currentFileId === deleteFileId) { currentFileId = null; resetView(); }
-        showToast('已删除');
+        if (deleteMode === 'folder') {
+            const res = await fetch(`/api/folders/${deleteTargetId}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail);
+            if (selectedFolderId === deleteTargetId) selectedFolderId = null;
+            if (currentFileFolderId === deleteTargetId) {
+                currentFileId = null;
+                currentFileFolderId = null;
+                resetView();
+            }
+            showToast('目录已删除');
+        } else {
+            const res = await fetch(`/api/files/${deleteTargetId}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail);
+            if (currentFileId === deleteTargetId) {
+                currentFileId = null;
+                currentFileFolderId = null;
+                resetView();
+            }
+            showToast('文件已删除');
+        }
         closeDeleteModal();
         await loadFiles();
-    } catch (e) { showToast(e.message, 'error'); }
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+function downloadCurrentFile() {
+    if (!currentFileId) return;
+    window.location.href = `/api/files/${currentFileId}/download`;
 }
 
 // ==================== File Selection ====================
@@ -516,8 +1169,14 @@ async function refreshCurrentFileDetail(fileId, sheetIndex = currentSheetIndex, 
 async function selectFile(id, sheetIndex = 0) {
     const requestToken = ++selectFileRequestToken;
     currentFileId = id;
+    const fileItem = findFileById(id);
+    currentFileFolderId = fileItem ? (fileItem.folder_id ?? null) : null;
+    selectedFolderId = currentFileFolderId;
+    ensureFolderExpanded(currentFileFolderId);
     currentSheetIndex = sheetIndex;
     renderFileList();
+    updateUploadHint();
+    updateDownloadButtons();
     document.getElementById('upload-area').style.display = 'none';
     document.getElementById('empty-state').style.display = 'none';
     document.getElementById('mindmap-container').style.display = 'block';
@@ -571,6 +1230,11 @@ function resetView() {
     document.getElementById('empty-state').style.display = 'none';
     document.getElementById('upload-area').style.display = '';
     document.getElementById('module-panel').classList.remove('show');
+    document.getElementById('comments-panel').classList.remove('open');
+    commentsVisible = false;
+    updateCommentsBtn();
+    updateDownloadButtons();
+    updateUploadHint();
 }
 
 // ==================== Node Path Lookup ====================
@@ -693,17 +1357,37 @@ async function popupAction(action) {
             return;
         }
         showToast('已递归展开当前节点下的所有节点');
+    } else if (action === 'mark-self-test') {
+        await updateTopicStatus(popupTopicId, 'self_test');
+    } else if (action === 'mark-test') {
+        await updateTopicStatus(popupTopicId, 'test');
+    } else if (action === 'clear-status') {
+        await updateTopicStatus(popupTopicId, '');
     } else if (action === 'md') {
         await copyToClipboard(buildExportUrl(currentFileId, popupPath));
         showToast('已复制 MD 链接');
     } else if (action === 'prompt') {
-        const url = `/api/export/${currentFileId}/${encodeURIComponent(popupPath)}?format=prompt`;
-        const res = await fetch(url);
-        const text = await res.text();
-        await copyToClipboard(text);
-        showToast('已复制完整 Prompt');
+        await copyPromptForPath(popupPath);
     } else if (action === 'comment') {
         openCommentDialog();
+    }
+}
+
+async function updateTopicStatus(topicId, status) {
+    try {
+        const res = await fetch(`/api/topics/${topicId}/status`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail);
+        const topic = topicsCache.find(t => t.id === topicId);
+        if (topic) topic.status = status;
+        refreshMarkmapFromCache(topicId);
+        showToast('节点标记已更新');
+    } catch (e) {
+        showToast(e.message, 'error');
     }
 }
 
@@ -819,7 +1503,7 @@ function renderCommentsPanel() {
                     <div class="comment-entry-text">${escapeHtml(c.content)}</div>
                     <div class="comment-entry-time">${c.created_at || ''}</div>
                 </div>
-                <button class="btn-delete-comment" onclick="deleteCommentConfirm(${c.id})" title="删除">✕</button>
+                <button class="btn-delete-comment" onclick="deleteCommentConfirm(${c.id})" title="删除">删</button>
             </div>`;
         }
         html += '</div>';
@@ -950,6 +1634,7 @@ function updateMarkmapView(preserveFocusTopicId = null) {
     markmapInstance.setData(markmapInstance.state.data);
     setTimeout(() => {
         annotateSvgNodes();
+        renderStatusBadges();
         renderCommentBubbles();
         if (preserveFocusTopicId) locateNode(preserveFocusTopicId);
     }, 120);
@@ -1046,7 +1731,71 @@ function refreshMarkmapFromCache(expandTopicId) {
 
     // 5. Update markmap without fit
     markmapInstance.setData(newRoot);
-    setTimeout(() => { annotateSvgNodes(); renderCommentBubbles(); }, 150);
+    setTimeout(() => { annotateSvgNodes(); renderStatusBadges(); renderCommentBubbles(); }, 150);
+}
+
+function getStatusBadgeMeta(status) {
+    if (status === 'self_test') return { text: '◎ 自测', fill: '#f5b041', textFill: '#5f4300', width: 42 };
+    if (status === 'test') return { text: '◆ 测试', fill: '#5dade2', textFill: '#083d77', width: 42 };
+    return null;
+}
+
+function getStatusBadgeWidth(status) {
+    const meta = getStatusBadgeMeta(status);
+    return meta ? meta.width + 10 : 0;
+}
+
+function renderStatusBadges() {
+    document.querySelectorAll('.status-badge-svg').forEach(el => el.remove());
+
+    if (!markmapInstance || !topicsCache.length) return;
+
+    const svgEl = document.querySelector('#markmap');
+    if (!svgEl) return;
+
+    annotateSvgNodes();
+
+    const ns = 'http://www.w3.org/2000/svg';
+    const fos = svgEl.querySelectorAll('foreignObject');
+    for (const fo of fos) {
+        const tid = fo.getAttribute('data-topic-id');
+        if (!tid) continue;
+        const topic = topicsCache.find(t => String(t.id) === String(tid));
+        const meta = getStatusBadgeMeta(topic?.status || '');
+        if (!meta) continue;
+
+        const w = parseFloat(fo.getAttribute('width')) || 60;
+        const h = parseFloat(fo.getAttribute('height')) || 22;
+        const x = w + 8;
+        const y = Math.max(0, h / 2 - 9);
+
+        const item = document.createElementNS(ns, 'g');
+        item.classList.add('status-badge-svg');
+
+        const rect = document.createElementNS(ns, 'rect');
+        rect.setAttribute('x', x);
+        rect.setAttribute('y', y);
+        rect.setAttribute('rx', 8);
+        rect.setAttribute('ry', 8);
+        rect.setAttribute('width', meta.width);
+        rect.setAttribute('height', 18);
+        rect.setAttribute('fill', meta.fill);
+        rect.setAttribute('opacity', '0.22');
+
+        const txt = document.createElementNS(ns, 'text');
+        txt.setAttribute('x', x + meta.width / 2);
+        txt.setAttribute('y', y + 9);
+        txt.setAttribute('text-anchor', 'middle');
+        txt.setAttribute('dominant-baseline', 'central');
+        txt.setAttribute('fill', meta.textFill);
+        txt.setAttribute('font-size', '10');
+        txt.setAttribute('font-weight', '700');
+        txt.textContent = meta.text;
+
+        item.appendChild(rect);
+        item.appendChild(txt);
+        fo.parentNode.appendChild(item);
+    }
 }
 
 function renderCommentBubbles() {
@@ -1078,8 +1827,9 @@ function renderCommentBubbles() {
         const count = commentCountMap[tid];
         const w = parseFloat(fo.getAttribute('width')) || 60;
         const h = parseFloat(fo.getAttribute('height')) || 22;
+        const statusWidth = getStatusBadgeWidth((topicsCache.find(t => String(t.id) === String(tid)) || {}).status || '');
 
-        const cx = w + 28;
+        const cx = w + 28 + statusWidth;
         const cy = h / 2 - 5;
 
         const item = document.createElementNS(ns, 'g');
@@ -1255,6 +2005,7 @@ function renderMarkmap(markdown) {
             if (renderVersion !== markmapRenderVersion || !markmapInstance) return;
             markmapInstance.fit();
             annotateSvgNodes();
+            renderStatusBadges();
             renderCommentBubbles();
             container.style.opacity = '1';
         }, 350);
@@ -1293,12 +2044,13 @@ async function loadModules(fileId) {
     const treeRes = await fetch(`/api/files/${fileId}/tree?sheet=${currentSheetIndex}`);
     const tree = await treeRes.json();
     const moduleTree = document.getElementById('module-tree');
-    const f = null;
+    const f = filesCache.find(x => x.id === fileId) || null;
     const currentSheetStat = currentSheetStats.find(x => x.index === currentSheetIndex);
     const currentSheetName = currentSheetStat?.name || currentSheetNames[currentSheetIndex] || '';
     document.getElementById('module-file-name').textContent = currentSheetName ? `${currentSheetName}${currentSheetStat ? ` · ${currentSheetStat.topic_count}` : ''}` : '';
-    document.getElementById('module-file-name').textContent = f ? `${f.root_title}${currentSheetStat ? ` · ${currentSheetStat.topic_count}` : ''}` : '';
-    document.getElementById('module-file-name').textContent = currentSheetName ? `${currentSheetName}${currentSheetStat ? ` · ${currentSheetStat.topic_count}` : ''}` : '';
+    if (!currentSheetName && f) {
+        document.getElementById('module-file-name').textContent = `${f.root_title}${currentSheetStat ? ` · ${currentSheetStat.topic_count}` : ''}`;
+    }
     moduleTree.innerHTML = '';
     function renderNode(node, depth = 0) {
         const div = document.createElement('div');
@@ -1326,6 +2078,7 @@ async function loadCases(fileId, path, title, fallbackCount = null) {
     let toolbar = `<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
         <button class="btn btn-sm btn-outline" onclick="copyExportUrl('${encodeURIComponent(path)}')">复制链接</button>
         <button class="btn btn-sm btn-outline" onclick="copyPromptUrl('${encodeURIComponent(path)}')" style="color:#27ae60;border-color:#27ae60">复制为 Prompt</button>
+        <button class="btn btn-sm btn-outline" onclick="openPromptTemplateModal()">Prompt 模板</button>
     </div>`;
     if (!data.cases.length) {
         body.innerHTML = toolbar + '<div style="color:#bbb;text-align:center;padding:20px">该模块下无子用例</div>';
@@ -1340,13 +2093,10 @@ async function loadCases(fileId, path, title, fallbackCount = null) {
 async function copyExportUrl(ep) { await copyToClipboard(buildExportUrl(currentFileId, decodeURIComponent(ep))); showToast('已复制分享链接'); }
 async function copyPromptUrl(ep) {
     const path = decodeURIComponent(ep);
-    const url = `/api/export/${currentFileId}/${encodeURIComponent(path)}?format=prompt`;
-    const res = await fetch(url);
-    const text = await res.text();
-    await copyToClipboard(text);
-    showToast('已复制完整 Prompt');
+    await copyPromptForPath(path);
 }
 function closeCaseDetail() { document.getElementById('case-detail').classList.remove('open'); }
 </script>
 </body>
 </html>
+
